@@ -133,7 +133,8 @@ p{margin:0;line-height:1.6;color:var(--dim)}
     <div class="hintbox">
       <p><b>살펴보기</b>방 안의 물건을 눌러요</p>
       <p><b>아이템</b>아래 칸의 물건을 눌러 고른 뒤, 쓸 곳을 눌러요</p>
-      <p><b>힌트</b>막히면 오른쪽 위 💡를 눌러요</p>
+      <p><b>조합</b>아이템을 고른 채로 다른 아이템을 누르면 합쳐져요</p>
+      <p><b>힌트</b>💡는 방마다 두 개뿐. 두 번째는 3분 뒤에 열려요</p>
     </div>
     <button class="btn" id="playBtn">시작하기</button>
     <button class="btn ghost" id="selectBtn">방 고르기</button>
@@ -225,9 +226,15 @@ function drawInv() {
   const box = $('inv'); box.innerHTML = '';
   for (let i = 0; i < 5; i++) {
     const it = inv[i]; const b = document.createElement('button'); b.className = 'slot' + (it && sel === it.id ? ' sel' : '');
-    if (it) { b.textContent = it.emo; b.setAttribute('aria-label', it.name); b.onclick = () => { sfx.tap(); sel = sel === it.id ? null : it.id; if (sel) toast(it.name + ' 을(를) 골랐어요. 쓸 곳을 눌러 보세요.'); drawInv(); }; }
+    if (it) { b.textContent = it.emo; b.setAttribute('aria-label', it.name); b.onclick = () => { sfx.tap(); if (sel && sel !== it.id && tryCombine(sel, it.id)) return; sel = sel === it.id ? null : it.id; if (sel) toast(it.name + ' 을(를) 골랐어요.'); drawInv(); }; }
     box.appendChild(b);
   }
+}
+function tryCombine(a, b) {
+  const c = (ROOMS[cur].combos || {}), r = c[a + '+' + b] || c[b + '+' + a];
+  if (!r) return false;
+  inv = inv.filter(i => i.id !== a && i.id !== b); sel = null; inv.push({ id: r[0], emo: r[1], name: r[2] });
+  sfx.get(); toast('두 물건을 합쳐서 ' + r[2] + ' 을(를) 만들었어요!'); drawInv(); return true;
 }
 function give(id, emo, name) { inv.push({ id, emo, name }); sfx.get(); toast(name + ' 을(를) 얻었어요!'); drawInv(); }
 function take(id) { inv = inv.filter(i => i.id !== id); if (sel === id) sel = null; drawInv(); }
@@ -316,149 +323,204 @@ $('nextBtn').onclick = () => startRoom(cur === ROOMS.length - 1 ? 0 : cur + 1);
    ROOMS
    ========================================================= */
 const WALL_A = 'linear-gradient(#4a3f5c,#3b3249)', FLOOR_A = 'repeating-linear-gradient(90deg,#5b3b25 0 12%,#523421 12% 24%)';
+
+/* shared widgets */
+function dialLock(title, code, ok) {
+  zoom(title, body => {
+    const vals = code.split('').map(() => 0);
+    const row = h('div', 'dials'); body.appendChild(row);
+    vals.forEach((_, i) => {
+      const d = h('div', 'dial');
+      const up = h('button', '', '▲'), num = h('div', 'num', '0'), dn = h('button', '', '▼');
+      up.onclick = () => { sfx.tap(); vals[i] = (vals[i] + 1) % 10; num.textContent = vals[i]; check(); };
+      dn.onclick = () => { sfx.tap(); vals[i] = (vals[i] + 9) % 10; num.textContent = vals[i]; check(); };
+      d.append(up, num, dn); row.appendChild(d);
+    });
+    let done = false;
+    function check() { if (!done && vals.join('') === code) { done = true; setTimeout(() => { closeZoom(); ok(); }, 300); } }
+  });
+}
+function clockFace(hr, mn) {
+  return '<i style="position:absolute;left:50%;top:50%;width:.22em;height:28%;background:#222;border-radius:.1em;transform-origin:50% 0;transform:translateX(-50%) rotate(' + (180 + (hr % 12 + mn / 60) * 30) + 'deg)"></i>' +
+    '<i style="position:absolute;left:50%;top:50%;width:.12em;height:40%;background:#222;transform-origin:50% 0;transform:translateX(-50%) rotate(' + (180 + mn * 6) + 'deg)"></i>' +
+    [0, 3, 6, 9].map(k => '<b style="position:absolute;left:' + (50 + 40 * Math.sin(k * Math.PI / 6)) + '%;top:' + (50 - 40 * Math.cos(k * Math.PI / 6)) + '%;width:.18em;height:.18em;background:#222;border-radius:50%;transform:translate(-50%,-50%)"></b>').join('');
+}
+const keyDoor = () => () => { if (sel === 'key') { take('key'); unlock(); } else { sfx.bad(); shake(door); toast('열쇠 구멍이 있어요.'); } };
+const paper = (inner, extra) => '<div style="background:#fff8e3;color:#3b2c1d;padding:16px 20px;border-radius:8px;font-weight:800;' + (extra || '') + '">' + inner + '</div>';
+
 const ROOMS = [
 
-/* 1. 깔개 밑 열쇠 */
-{ name: '작은 서재', hints: ['바닥에 깔린 깔개가 수상해요.', '깔개를 눌러 들춘 다음, 나온 열쇠를 주워요.', '아래 칸의 열쇠를 누르고 문을 눌러요.'],
+/* 1. 멈춘 시계 → 서랍 → 가위 → 쿠션 → 열쇠 */
+{ name: '작은 서재', hints: ['시간이 멈춘 물건이 있어요.', '쿠션 속 딱딱한 것은 맨손으로는 꺼낼 수 없어요.'],
   build() {
     room('linear-gradient(#5a4a3a,#4a3c2f)', FLOOR_A);
-    makeDoor(38, 26, 24, 46, () => { if (sel === 'key') { take('key'); unlock(); } else { sfx.bad(); shake(door); toast('열쇠 구멍이 있어요. 열쇠가 필요해요.'); } });
-    const f = put('frame', 8, 18, 20, 20, '<span class="emo" style="font-size:2em">⛵</span>');
+    makeDoor(38, 26, 24, 46, keyDoor());
+    const cl = put('obj', 8, 8, 16, 12, clockFace(7, 25), { background: '#fff8ea', borderRadius: '50%', border: '.3em solid #6b4a2e' });
+    on(cl, () => toast('시계가 멈춰 있어요.'));
+    const f = put('frame', 72, 8, 20, 18, '<span class="emo" style="font-size:2em">⛵</span>');
     on(f, () => toast('바다 그림이에요. 뒤에는 아무것도 없어요.'));
-    const sh = put('obj', 70, 40, 24, 32, '', { background: '#6b4a2e', borderRadius: '4px', boxShadow: 'inset 0 -.3em 0 #4d331e' });
-    sh.innerHTML = '<div style="position:absolute;inset:8% 6% auto;display:flex;gap:2%;align-items:flex-end;height:38%"><i style="flex:1;height:90%;background:#b33"></i><i style="flex:1;height:70%;background:#36b"></i><i style="flex:1;height:80%;background:#3a6"></i><i style="flex:1;height:60%;background:#cb4"></i></div>';
-    on(sh, () => toast('책장이에요. 오래된 책뿐이에요.'));
-    const key = put('obj', 44, 82, 12, 10, '<span class="emo" style="font-size:1.8em">🔑</span>');
-    on(key, () => { key.remove(); give('key', '🔑', '열쇠'); });
-    const rug = put('obj', 26, 76, 48, 18, '', { background: 'repeating-linear-gradient(90deg,#a3332e 0 10%,#c9a13b 10% 14%)', borderRadius: '8px', transition: 'transform .5s', boxShadow: '0 .2em .4em rgba(0,0,0,.4)' });
-    on(rug, () => { if (!flags.rug) { flags.rug = 1; rug.style.transform = 'translateX(60%) rotate(8deg)'; sfx.tap(); toast('깔개 밑에서 뭔가 반짝여요!'); } });
+    const desk = put('obj', 66, 52, 30, 20, '', { background: '#6b4a2e', borderRadius: '3px', boxShadow: 'inset 0 -.3em 0 #4d331e' });
+    const drw = put('obj', 72, 56, 18, 7, '<i style="position:absolute;left:40%;right:40%;top:40%;height:20%;background:#d9b46a;border-radius:3px"></i>', { background: '#58391f', border: '1px solid #3b2512' });
+    on(desk, () => toast('낡은 책상이에요.'));
+    on(drw, () => {
+      if (flags.drawer) { toast('빈 서랍이에요.'); return; }
+      dialLock('서랍 자물쇠 (세 자리)', '725', () => { flags.drawer = 1; sfx.unlock(); give('sc', '✂️', '가위'); });
+    });
+    const sofa = put('obj', 4, 52, 28, 20, '', { background: '#7a3b3b', borderRadius: '1em 1em .3em .3em', boxShadow: 'inset 0 -.6em 0 #5e2a2a' });
+    const cush = put('obj', 10, 54, 14, 9, '', { background: '#d9b46a', borderRadius: '.6em' });
+    on(sofa, () => toast('오래된 소파예요.'));
+    on(cush, () => {
+      if (flags.cush) { toast('쿠션이 찢어져 있어요.'); return; }
+      if (sel === 'sc') { take('sc'); flags.cush = 1; cush.style.background = '#a08048'; give('key', '🔑', '열쇠'); }
+      else toast('푹신한 쿠션이에요. 안에 딱딱한 게 만져져요.');
+    });
+    const rug = put('obj', 30, 78, 40, 14, '', { background: 'repeating-linear-gradient(90deg,#a3332e 0 10%,#c9a13b 10% 14%)', borderRadius: '8px', boxShadow: '0 .2em .4em rgba(0,0,0,.4)' });
+    on(rug, () => toast('깔개 밑엔 먼지뿐이에요.'));
   } },
 
-/* 2. 액자 별 개수 + 색 순서 다이얼 */
-{ name: '별 그림 방', hints: ['액자 세 개에 별이 몇 개씩 있는지 세어 봐요.', '문의 자물쇠 위에 색깔 점이 순서대로 있어요.', '파랑, 빨강, 초록 액자의 별 개수를 그 순서로 맞춰요.'],
+/* 2. 꽃병 쪽지 + 액자 크기 순서 */
+{ name: '별 그림 방', hints: ['위태로워 보이는 물건이 있어요.', '액자는 색보다 다른 것이 중요해요.'],
   build() {
     room('linear-gradient(#34465a,#2b3a4b)', 'linear-gradient(#5c544a,#4a433b)');
-    const frames = [['#d84a4a', 2], ['#4a7bd8', 7], ['#3fae6a', 4]];
-    frames.forEach(([c, n], i) => {
-      const f = put('frame', 6 + i * 31, 6, 26, 16, '', { borderColor: c });
-      f.innerHTML = '<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:0 .05em;padding:.1em;color:#e7b52c;font-size:.68em;line-height:1.1">' + '★'.repeat(n) + '</div>';
+    const frames = [['#d84a4a', 2, 4, 5, 26, 19], ['#4a7bd8', 7, 36, 8, 14, 11], ['#3fae6a', 4, 56, 6, 20, 15]];
+    frames.forEach(([c, n, x, y, w, hh]) => {
+      const f = put('frame', x, y, w, hh, '', { borderColor: c });
+      f.innerHTML = '<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:0 .05em;padding:.1em;color:#e7b52c;font-size:' + (n > 4 ? .4 : .62) + 'em;line-height:1.1">' + '★'.repeat(n) + '</div>';
       on(f, () => toast('별이 그려진 액자예요.'));
     });
-    makeDoor(38, 28, 24, 44, () => {
-      zoom('세 자리 자물쇠', body => {
-        const vals = [0, 0, 0]; const order = ['#4a7bd8', '#d84a4a', '#3fae6a'];
-        const row = h('div', 'dials'); body.appendChild(row);
-        vals.forEach((_, i) => {
-          const d = h('div', 'dial'); d.innerHTML = '<span class="dot" style="background:' + order[i] + '"></span>';
-          const up = h('button', '', '▲'), num = h('div', 'num', '0'), dn = h('button', '', '▼');
-          up.onclick = () => { sfx.tap(); vals[i] = (vals[i] + 1) % 10; num.textContent = vals[i]; check(); };
-          dn.onclick = () => { sfx.tap(); vals[i] = (vals[i] + 9) % 10; num.textContent = vals[i]; check(); };
-          d.append(up, num, dn); row.appendChild(d);
-        });
-        function check() { if (vals.join('') === '724') { setTimeout(() => { closeZoom(); unlock(); }, 300); } }
-      });
+    const fallen = put('frame', 62, 82, 16, 10, '<div style="color:#e7b52c;font-size:.6em">★★★★★</div>', { borderColor: '#e0c341', transform: 'rotate(12deg)' });
+    on(fallen, () => toast('바닥에 떨어진 액자예요. 유리가 깨져 있어요.'));
+    makeDoor(38, 28, 24, 44, () => dialLock('세 자리 자물쇠', '742', () => unlock()));
+    put('obj', 80, 46, 12, 26, '', { background: '#6b4a2e', borderRadius: '2px' });
+    const vase = put('obj', 79, 30, 14, 16, '<span class="emo" style="font-size:2.4em">🏺</span>', { transition: 'transform .5s' });
+    on(vase, () => {
+      if (flags.vase) return; flags.vase = 1; sfx.bad();
+      vase.style.transform = 'translate(-30%,120%) rotate(-80deg)'; toast('쨍그랑! 꽃병이 넘어졌어요. 뭔가 떨어졌어요.');
+      const n = put('note', 84, 84, 10, 8, '📝', { fontSize: '1.1em' });
+      on(n, () => zoom('꽃병 속 쪽지', b => { b.innerHTML += paper('벽에 걸린 것만.<br>작은 것부터.', 'font-size:20px;line-height:1.7'); }));
     });
-    const plant = put('obj', 78, 52, 16, 22, '<span class="emo" style="font-size:3em">🪴</span>');
-    on(plant, () => toast('화분이에요. 흙만 들어 있어요.'));
   } },
 
-/* 3. 엇갈린 스위치와 전구 */
-{ name: '전구 방', hints: ['바닥의 쪽지에 전구 모양이 그려져 있어요.', '스위치와 전구가 같은 순서로 연결되어 있지 않아요. 하나씩 눌러서 어느 전구가 켜지는지 봐요.', '천장 전구가 쪽지 그림과 똑같이 켜지면 돼요.'],
+/* 3. 찢어진 쪽지 두 조각 + 얽힌 스위치 5개 */
+{ name: '전구 방', hints: ['쪽지 조각이 하나뿐일까요?', '스위치 하나가 전구 하나만 켜는 건 아니에요.'],
   build() {
     room('linear-gradient(#2c2a33,#24222a)', 'linear-gradient(#3e3a36,#33302c)');
-    const perm = [2, 0, 3, 1], goal = [1, 0, 1, 1], bulbs = [0, 0, 0, 0], sw = [0, 0, 0, 0];
+    const masks = [[2], [0, 4], [3], [1], [2, 4]], goal = [1, 1, 1, 0, 1], bulbs = [0, 0, 0, 0, 0], sw = [0, 0, 0, 0, 0];
     const bEls = [];
-    for (let i = 0; i < 4; i++) {
-      put('obj', 15 + i * 21, 0, .6, 6, '', { background: '#111' });
-      const b = put('obj', 11.5 + i * 21, 5, 8, 8, '', { borderRadius: '50%', background: '#555', transition: 'all .2s' });
-      bEls.push(b);
+    for (let i = 0; i < 5; i++) {
+      put('obj', 12.2 + i * 18, 0, .6, 5, '', { background: '#111' });
+      bEls.push(put('obj', 9 + i * 18, 4, 7, 7, '', { borderRadius: '50%', background: '#555', transition: 'all .2s' }));
     }
-    const panel = put('obj', 70, 34, 22, 14, '', { background: '#d8d2c4', borderRadius: '6px', display: 'flex', gap: '6%', justifyContent: 'center', alignItems: 'center', boxShadow: '0 .2em .3em rgba(0,0,0,.4)' });
-    const swEls = [];
-    for (let i = 0; i < 4; i++) {
-      const s = h('button', '', ''); Object.assign(s.style, { width: '18%', height: '70%', background: '#f4f0e6', borderRadius: '4px', border: '1px solid #aaa', position: 'relative' });
+    const panel = put('obj', 66, 32, 28, 13, '', { background: '#d8d2c4', borderRadius: '6px', display: 'flex', gap: '4%', justifyContent: 'center', alignItems: 'center', boxShadow: '0 .2em .3em rgba(0,0,0,.4)' });
+    for (let i = 0; i < 5; i++) {
+      const s = h('button', '', ''); Object.assign(s.style, { width: '15%', height: '70%', background: '#f4f0e6', borderRadius: '4px', border: '1px solid #aaa', position: 'relative' });
       s.innerHTML = '<i style="position:absolute;left:20%;right:20%;height:40%;top:8%;background:#999;border-radius:3px;transition:top .15s"></i>';
-      s.onclick = e => { e.stopPropagation(); sfx.tap(); sw[i] ^= 1; bulbs[perm[i]] ^= 1; s.firstChild.style.top = sw[i] ? '52%' : '8%'; draw(); };
-      panel.appendChild(s); swEls.push(s);
+      s.onclick = e => { e.stopPropagation(); if (unlocked) return; sfx.tap(); sw[i] ^= 1; masks[i].forEach(k => bulbs[k] ^= 1); s.firstChild.style.top = sw[i] ? '52%' : '8%'; draw(); };
+      panel.appendChild(s);
     }
     function draw() {
       bEls.forEach((b, i) => { b.style.background = bulbs[i] ? 'radial-gradient(circle,#fffbe0,#ffd659)' : '#555'; b.style.boxShadow = bulbs[i] ? '0 0 1.5em .4em rgba(255,214,89,.6)' : 'none'; });
-      if (bulbs.join() === goal.join()) unlock('전구가 쪽지와 똑같이 켜졌어요. 철컥!');
+      if (bulbs.join() === goal.join()) unlock('철컥! 어딘가 잠금이 풀렸어요.');
     }
     makeDoor(8, 26, 24, 46);
-    const note = put('note', 52, 80, 16, 10, '📝', { fontSize: '1.4em' });
-    on(note, () => zoom('바닥에 떨어진 쪽지', body => {
-      body.innerHTML += '<div style="display:flex;gap:14px;padding:16px;background:#fff8e3;border-radius:8px">' +
-        goal.map(g => '<span style="width:38px;height:38px;border-radius:50%;' + (g ? 'background:radial-gradient(circle,#fffbe0,#ffc93c);box-shadow:0 0 12px #ffc93c' : 'background:#888') + '"></span>').join('') + '</div><p>전구 그림이 그려져 있어요.</p>';
-    }));
+    const bulb = (g) => '<span style="width:34px;height:34px;border-radius:50%;' + (g ? 'background:radial-gradient(circle,#fffbe0,#ffc93c);box-shadow:0 0 12px #ffc93c' : 'background:#888') + '"></span>';
+    const can = put('obj', 40, 60, 12, 14, '<span class="emo" style="font-size:2.2em">🗑️</span>');
+    on(can, () => zoom('휴지통 속 종이 조각', b => { b.innerHTML += '<div style="display:flex;gap:12px;padding:16px 26px 16px 16px;background:#fff8e3;clip-path:polygon(0 0,100% 0,92% 20%,100% 40%,90% 60%,100% 80%,93% 100%,0 100%)">' + goal.slice(0, 3).map(bulb).join('') + '</div>'; }));
+    const chair = put('obj', 72, 56, 16, 18, '<span class="emo" style="font-size:2.6em">🪑</span>');
+    on(chair, () => zoom('의자 밑에 붙어 있던 종이 조각', b => { b.innerHTML += '<div style="display:flex;gap:12px;padding:16px 16px 16px 26px;background:#fff8e3;clip-path:polygon(8% 0,100% 0,100% 100%,7% 100%,0 80%,10% 60%,0 40%,8% 20%)">' + goal.slice(3).map(bulb).join('') + '</div>'; }));
   } },
 
-/* 4. 책 높이 순서 버튼 */
-{ name: '책장 방', hints: ['책장의 쪽지를 읽어 봐요.', '책의 색깔과 키를 잘 봐요.', '가장 큰 책 색부터 작은 책 색 순서로 문 옆 버튼을 눌러요.'],
+/* 4. 전구 끼우기 + 시 해석 + 단추 없는 색 */
+{ name: '책장 방', hints: ['버튼 판이 살아 있지 않아요.', '쪽지의 시는 순서를 말해요. 모든 책에 버튼이 있는 건 아니에요.'],
   build() {
     room('linear-gradient(#3d4a3a,#323e30)', FLOOR_A);
-    makeDoor(8, 26, 24, 46);
-    const shelf = put('obj', 46, 22, 46, 34, '', { background: '#5a3b22', borderRadius: '4px', boxShadow: 'inset 0 0 0 .4em #3e2815' });
-    const books = [['#d84a4a', 70], ['#4a7bd8', 48], ['#3fae6a', 90], ['#e7c33c', 60]];
-    shelf.innerHTML = '<div style="position:absolute;left:8%;right:30%;bottom:8%;top:8%;display:flex;gap:6%;align-items:flex-end">' +
+    makeDoor(6, 26, 24, 46);
+    const shelf = put('obj', 46, 20, 48, 34, '', { background: '#5a3b22', borderRadius: '4px', boxShadow: 'inset 0 0 0 .4em #3e2815' });
+    const books = [['#d84a4a', 70], ['#9b59d0', 35], ['#4a7bd8', 48], ['#3fae6a', 90], ['#e7c33c', 60]];
+    shelf.innerHTML = '<div style="position:absolute;left:8%;right:26%;bottom:8%;top:8%;display:flex;gap:5%;align-items:flex-end">' +
       books.map(([c, hh]) => '<i style="flex:1;height:' + hh + '%;background:' + c + ';border-radius:2px;box-shadow:inset -.2em 0 rgba(0,0,0,.2)"></i>').join('') + '</div>';
     on(shelf, () => toast('색색의 책이 꽂혀 있어요.'));
-    const note = put('note', 76, 40, 13, 10, '📜', { fontSize: '1.3em' });
-    on(note, () => zoom('책장의 쪽지', body => { body.innerHTML += '<div style="background:#fff8e3;color:#3b2c1d;padding:18px 22px;border-radius:8px;font-size:20px;font-weight:800">"키 큰 것부터 차례로"</div>'; }));
-    const goal = ['#3fae6a', '#d84a4a', '#e7c33c', '#4a7bd8']; let seq = [];
-    const pad = put('obj', 34, 46, 8, 20, '', { background: '#222', borderRadius: '6px', display: 'flex', flexDirection: 'column', justifyContent: 'space-around', alignItems: 'center' });
-    ['#d84a4a', '#4a7bd8', '#3fae6a', '#e7c33c'].forEach(c => {
-      const b = h('button', '', ''); Object.assign(b.style, { width: '1.6em', height: '1.6em', flex: 'none', background: c, borderRadius: '50%', boxShadow: 'inset 0 -.15em rgba(0,0,0,.3)' });
+    const note = put('note', 79, 36, 12, 10, '📜', { fontSize: '1.2em' });
+    on(note, () => zoom('책장의 쪽지', b => { b.innerHTML += paper('가장 낮은 곳에서 시작해<br>하늘에 닿을 때까지', 'font-size:19px;line-height:1.7'); }));
+    const lamp = put('obj', 34, 30, 8, 8, '', { borderRadius: '50%', background: '#333', border: '.2em dashed #777' });
+    on(lamp, () => {
+      if (flags.pw) { toast('전구가 환하게 켜져 있어요.'); return; }
+      if (sel === 'bulb') { take('bulb'); flags.pw = 1; sfx.unlock(); lamp.style.background = 'radial-gradient(circle,#fffbe0,#ffd659)'; lamp.style.boxShadow = '0 0 1em #ffd659'; lamp.style.border = '0'; pad.style.opacity = 1; toast('불이 들어오자 버튼 판이 깨어났어요.'); }
+      else toast('전구 소켓이 비어 있어요.');
+    });
+    const goal = ['#4a7bd8', '#e7c33c', '#d84a4a', '#3fae6a']; let seq = [];
+    const pad = put('obj', 32, 42, 10, 22, '', { background: '#222', borderRadius: '6px', display: 'flex', flexDirection: 'column', justifyContent: 'space-around', alignItems: 'center', opacity: .45 });
+    ['#3fae6a', '#e7c33c', '#d84a4a', '#4a7bd8'].forEach(c => {
+      const b = h('button', '', ''); Object.assign(b.style, { width: '1.5em', height: '1.5em', flex: 'none', background: c, borderRadius: '50%', boxShadow: 'inset 0 -.15em rgba(0,0,0,.3)' });
       b.onclick = e => {
-        e.stopPropagation(); if (unlocked) return; tone(300 + goal.indexOf(c) * 120, .12, 'triangle');
-        seq.push(c); const ok = seq.every((s, i) => s === goal[i]);
-        if (!ok) { seq = []; sfx.bad(); shake(pad); toast('삐- 순서가 틀렸어요.'); }
+        e.stopPropagation(); if (unlocked) return;
+        if (!flags.pw) { toast('눌러도 아무 반응이 없어요.'); return; }
+        tone(300 + goal.indexOf(c) * 120, .12, 'triangle');
+        seq.push(c); if (!seq.every((s, i) => s === goal[i])) { seq = []; sfx.bad(); shake(pad); toast('삐-'); }
         else if (seq.length === 4) unlock();
       };
       pad.appendChild(b);
     });
-    const lamp = put('obj', 70, 58, 18, 16, '<span class="emo" style="font-size:2.6em">🛋️</span>');
-    on(lamp, () => toast('푹신한 소파예요.'));
+    const sofa = put('obj', 62, 58, 30, 16, '<span class="emo" style="font-size:2.8em">🛋️</span>');
+    on(sofa, () => { if (!flags.sofa) { flags.sofa = 1; toast('소파 틈에 뭔가 끼어 있어요…'); setTimeout(() => give('bulb', '💡', '전구'), 600); } else toast('푹신한 소파예요.'); });
   } },
 
-/* 5. 화분 → 드라이버 → 환풍구 → 열쇠 */
-{ name: '창고', hints: ['화분 흙 속을 살펴봐요.', '드라이버로 벽의 환풍구 나사를 풀어요.', '환풍구 안의 열쇠로 문을 열어요.'],
+/* 5. 페인트통 → 공구함 → 드라이버 → 환풍구 / 자석+실 → 열쇠 */
+{ name: '창고', hints: ['통에 적힌 글자는 한쪽 면만 보여요.', '손이 닿지 않으면 두 물건을 합쳐 봐요. 아이템 하나를 고른 채로 다른 아이템을 눌러요.'],
+  combos: { 'mag+str': ['rod', '🎣', '자석 낚싯줄'] },
   build() {
     room('linear-gradient(#4b4b4b,#3c3c3c)', 'linear-gradient(#5a5650,#4b4843)');
-    makeDoor(38, 26, 24, 46, () => { if (sel === 'key') { take('key'); unlock(); } else { sfx.bad(); shake(door); toast('열쇠가 필요해요.'); } });
+    makeDoor(38, 26, 24, 46, keyDoor());
     const vent = put('obj', 70, 10, 22, 16, '', { background: 'repeating-linear-gradient(#999 0 12%,#666 12% 22%)', border: '.3em solid #888', borderRadius: '4px' });
-    vent.innerHTML = '<i style="position:absolute;width:.5em;height:.5em;border-radius:50%;background:#333;left:3%;top:5%"></i><i style="position:absolute;width:.5em;height:.5em;border-radius:50%;background:#333;right:3%;top:5%"></i><i style="position:absolute;width:.5em;height:.5em;border-radius:50%;background:#333;left:3%;bottom:5%"></i><i style="position:absolute;width:.5em;height:.5em;border-radius:50%;background:#333;right:3%;bottom:5%"></i>';
     on(vent, () => {
-      if (flags.vent) return;
-      if (sel === 'drv') { take('drv'); flags.vent = 1; sfx.tap(); vent.style.background = '#1a1a1a'; vent.innerHTML = ''; toast('나사를 풀었어요. 안에 뭔가 있어요!');
-        const k = put('obj', 75, 12, 12, 12, '<span class="emo" style="font-size:1.8em">🔑</span>', { zIndex: 5 }); on(k, () => { k.remove(); give('key', '🔑', '열쇠'); }); }
-      else toast('나사 네 개로 꽉 조여 있어요.');
+      if (flags.got) { toast('텅 빈 환풍구예요.'); return; }
+      if (!flags.vent) {
+        if (sel === 'drv') { take('drv'); flags.vent = 1; sfx.tap(); vent.style.background = '#111'; toast('환풍구 뚜껑을 열었어요. 깊숙한 곳에 열쇠가 보여요.'); }
+        else toast('나사로 꽉 조여 있어요.');
+        return;
+      }
+      if (sel === 'rod') { take('rod'); flags.got = 1; give('key', '🔑', '열쇠'); }
+      else toast('열쇠가 너무 깊이 있어서 손이 닿지 않아요.');
     });
-    const pot = put('obj', 8, 52, 18, 22, '<span class="emo" style="font-size:3em">🪴</span>');
-    on(pot, () => { if (!flags.pot) { flags.pot = 1; give('drv', '🪛', '드라이버'); } else toast('흙밖에 없어요.'); });
-    const box = put('obj', 68, 56, 26, 18, '', { background: '#a77b4b', borderRadius: '3px', boxShadow: 'inset 0 0 0 .2em #7d5732' });
-    box.innerHTML = '<div style="position:absolute;left:45%;top:0;bottom:0;width:10%;background:#d9c08a"></div>';
-    on(box, () => toast('상자예요. 텅 비어 있어요.'));
+    const sides = ['<b style="font-size:.5em">PAINT</b>', '<b style="font-size:.9em">★</b>', '<b style="font-size:.55em;letter-spacing:.05em">4186</b>'];
+    const can = put('obj', 6, 60, 12, 12, sides[0], { background: 'linear-gradient(90deg,#3a6fa8,#5b8fd0,#3a6fa8)', borderRadius: '.3em', color: '#fff' });
+    on(can, () => { flags.can = ((flags.can || 0) + 1) % 3; can.innerHTML = sides[flags.can]; sfx.tap(); });
+    const tb = put('obj', 22, 62, 14, 10, '', { background: '#c0392b', borderRadius: '.3em', boxShadow: 'inset 0 .4em 0 #962d22' });
+    on(tb, () => { if (flags.tb) { toast('빈 공구함이에요.'); return; } keypad(4, '4186', () => { flags.tb = 1; sfx.unlock(); give('drv', '🪛', '드라이버'); }); });
+    const box = put('obj', 68, 56, 26, 18, '<div style="position:absolute;left:45%;top:0;bottom:0;width:10%;background:#d9c08a"></div>', { background: '#a77b4b', borderRadius: '3px', boxShadow: 'inset 0 0 0 .2em #7d5732' });
+    on(box, () => { if (!flags.mag) { flags.mag = 1; give('mag', '🧲', '자석'); } else toast('빈 상자예요.'); });
+    put('obj', 4, 34, 30, 2.5, '', { background: '#6b4a2e' });
+    const str = put('obj', 22, 26, 9, 8, '<span class="emo" style="font-size:1.5em">🧵</span>');
+    on(str, () => { if (!flags.str) { flags.str = 1; str.remove(); give('str', '🧵', '실타래'); } });
+    const pot = put('obj', 6, 22, 12, 12, '<span class="emo" style="font-size:1.8em">🪴</span>');
+    on(pot, () => toast('시든 화분이에요.'));
   } },
 
-/* 6. 슬라이드 퍼즐 */
-{ name: '타일 문', hints: ['문을 눌러 퍼즐을 열어요.', '빈칸 옆의 타일을 누르면 미끄러져요.', '1부터 8까지 순서대로 맞추고 오른쪽 아래를 비워요.'],
+/* 6. 그림 슬라이드 퍼즐 */
+{ name: '타일 문', hints: ['벽의 작은 사진을 잘 봐 두세요.', '오른쪽 아래 칸이 비어야 완성이에요.'],
   build() {
     room('linear-gradient(#5a3b3b,#4a3030)', 'linear-gradient(#3d3434,#302828)');
+    const pic = 'radial-gradient(circle at 72% 24%,#ffd659 0 9%,transparent 9.5%),' +
+      'linear-gradient(150deg,transparent 52%,#2e7d4f 52.5% 70%,transparent 70.5%),' +
+      'linear-gradient(210deg,transparent 58%,#1f5a39 58.5%),' +
+      'radial-gradient(ellipse at 25% 35%,#fff 0 6%,transparent 6.5%),' +
+      'radial-gradient(ellipse at 32% 33%,#fff 0 6%,transparent 6.5%),' +
+      'linear-gradient(#5aa9e6,#f7c59f)';
+    const piece = (k, sz) => { const r = (k - 1) / 3 | 0, c = (k - 1) % 3; return '<div style="width:' + sz + 'px;height:' + sz + 'px;border-radius:8px;background:' + pic + ';background-size:' + sz * 3 + 'px ' + sz * 3 + 'px;background-position:-' + c * sz + 'px -' + r * sz + 'px;position:relative;overflow:hidden"><b style="position:absolute;left:' + (-c * sz) + 'px;top:' + (-r * sz) + 'px;width:' + sz * 3 + 'px;height:' + sz * 3 + 'px;display:grid;place-items:end center;padding-bottom:' + sz * .35 + 'px;font-size:' + sz * .62 + 'px;color:rgba(255,255,255,.85);text-shadow:0 2px 6px rgba(0,0,0,.4);letter-spacing:.1em">탈출</b></div>'; };
     let t = [1, 2, 3, 4, 5, 6, 7, 8, 0], last = -1;
     do {
-      for (let n = 0; n < 60; n++) {
+      for (let n = 0; n < 120; n++) {
         const e = t.indexOf(0), r = e / 3 | 0, c = e % 3, nb = [];
         if (r > 0) nb.push(e - 3); if (r < 2) nb.push(e + 3); if (c > 0) nb.push(e - 1); if (c < 2) nb.push(e + 1);
         const opts = nb.filter(x => x !== last), m = opts[Math.random() * opts.length | 0]; last = e; t[e] = t[m]; t[m] = 0;
       }
-    } while (t.join() === '1,2,3,4,5,6,7,8,0');
-    makeDoor(38, 26, 24, 46, () => zoom('숫자 타일 퍼즐', body => {
+    } while (t.slice(0, 8).filter((v, i) => v === i + 1).length > 2);
+    makeDoor(38, 26, 24, 46, () => zoom('그림 조각 퍼즐', body => {
       const g = h('div', 'slide'); body.appendChild(g);
       const draw = () => {
         g.innerHTML = '';
         t.forEach((v, i) => {
-          const b = h('button', 'tile' + (v ? '' : ' empty'), v || ''); g.appendChild(b);
+          const b = h('button', 'tile' + (v ? '' : ' empty'), v ? piece(v, 82) : ''); b.style.background = 'none'; g.appendChild(b);
           b.onclick = () => {
             const e = t.indexOf(0), d = Math.abs(e - i);
             if (v && ((d === 1 && (e / 3 | 0) === (i / 3 | 0)) || d === 3)) { t[e] = v; t[i] = 0; sfx.tap(); draw();
@@ -468,124 +530,145 @@ const ROOMS = [
       };
       draw();
     }));
-    const door2 = door; put('obj', 41, 34, 18, 13, '', { background: 'repeating-linear-gradient(90deg,#c08d4a 0 32%,transparent 32% 34%)', opacity: .7, pointerEvents: 'none', borderRadius: '3px' });
-    const cl = put('obj', 8, 14, 20, 20, '<span class="emo" style="font-size:2.6em">🕰️</span>');
+    const ph = put('frame', 76, 10, 16, 14, '', { borderWidth: '.25em', background: pic, padding: 0 });
+    on(ph, () => zoom('벽에 걸린 사진', b => { const d = h('div', '', ''); d.style.cssText = 'display:grid;grid-template-columns:repeat(3,70px);gap:0'; for (let k = 1; k <= 9; k++) d.innerHTML += k < 9 ? piece(k, 70).replace('border-radius:8px', 'border-radius:0') : '<div style="width:70px;height:70px;background:#121016"></div>'; b.appendChild(d); }));
+    const cl = put('obj', 8, 14, 16, 16, '<span class="emo" style="font-size:2.4em">🕰️</span>');
     on(cl, () => toast('똑딱똑딱… 시계는 잘 가고 있어요.'));
     const ch = put('obj', 72, 54, 20, 20, '<span class="emo" style="font-size:2.6em">🪑</span>');
     on(ch, () => toast('평범한 의자예요.'));
   } },
 
-/* 7. 어둠과 손전등 */
-{ name: '어두운 방', hints: ['어둠 속에서 희미하게 빛나는 서랍 손잡이를 찾아요.', '손전등을 고르고 아무 데나 눌러서 켜요. 화면을 누르는 곳이 비춰져요.', '벽 여기저기를 비추면 숫자 네 개가 보여요. 왼쪽부터 읽어요.'],
+/* 7. 어둠: 손전등 + 건전지 조합, 붉은 숫자만 */
+{ name: '어두운 방', hints: ['어둠 속에서 빛나는 것이 하나만은 아니에요.', '벽의 숫자가 모두 같은 색은 아니에요.'],
+  combos: { 'bat+fl0': ['fl', '🔦', '손전등'] },
   build() {
     room('linear-gradient(#3e4a5a,#334050)', 'linear-gradient(#4a4440,#3c3733)');
-    const nums = [['3', 6, 12], ['9', 30, 52], ['0', 66, 8], ['6', 88, 46]];
-    nums.forEach(([n, x, y]) => put('obj', x, y, 8, 8, n, { color: '#e8f7ff', fontSize: '1.8em', fontWeight: 900, textShadow: '0 0 .3em #8fd3ff' }));
-    makeDoor(38, 26, 24, 46, () => keypad(4, '3906', () => unlock()));
-    const desk = put('obj', 66, 58, 30, 16, '', { background: '#6b4a2e', borderRadius: '3px' });
-    const drawer = put('obj', 74, 62, 14, 7, '', { background: '#58391f', border: '1px solid #3b2512', zIndex: 60 });
-    drawer.innerHTML = '<i style="position:absolute;left:35%;right:35%;top:40%;height:20%;background:#9ff;border-radius:3px;box-shadow:0 0 .6em #9ff"></i>';
-    on(drawer, () => { if (!flags.fl) { flags.fl = 1; give('fl', '🔦', '손전등'); toast('손전등을 얻었어요! 골라서 아무 곳이나 눌러 켜요.'); } else toast('빈 서랍이에요.'); });
+    [['5', 4, 14, 1], ['2', 18, 40, 0], ['0', 30, 6, 1], ['7', 64, 18, 0], ['3', 70, 40, 1], ['9', 82, 6, 0], ['8', 90, 30, 1]].forEach(([n, x, y, red]) =>
+      put('obj', x, y, 7, 7, n, { color: red ? '#ff6b5e' : '#e8f7ff', fontSize: '1.6em', fontWeight: 900 }));
+    put('obj', 6, 62, 30, 6, '붉은 것만, 왼쪽부터', { color: '#ffdfa8', fontSize: '.8em', fontWeight: 800, fontStyle: 'italic' });
+    makeDoor(38, 26, 24, 46, () => keypad(4, '5038', () => unlock()));
+    put('obj', 66, 58, 30, 16, '', { background: '#6b4a2e', borderRadius: '3px' });
+    const drawer = put('obj', 74, 62, 14, 7, '<i style="position:absolute;left:35%;right:35%;top:40%;height:20%;background:#9ff;border-radius:3px;box-shadow:0 0 .6em #9ff"></i>', { background: '#58391f', border: '1px solid #3b2512', zIndex: 60 });
+    on(drawer, () => { if (!flags.fl0) { flags.fl0 = 1; give('fl0', '🔦', '손전등 (건전지 없음)'); } else toast('빈 서랍이에요.'); });
+    put('obj', 4, 74, 30, 14, '', { background: '#4a3a5a', borderRadius: '.8em .8em .2em .2em' });
+    const remote = put('obj', 16, 76, 8, 5, '<i style="position:absolute;right:15%;top:30%;width:.35em;height:.35em;border-radius:50%;background:#f44;box-shadow:0 0 .5em #f44"></i>', { background: '#222', borderRadius: '.3em', zIndex: 60 });
+    on(remote, () => { if (!flags.bat) { flags.bat = 1; give('bat', '🔋', '건전지'); toast('리모컨에서 건전지를 뺐어요.'); } else toast('건전지가 빠진 리모컨이에요.'); });
     const dark = put('obj', 0, 0, 100, 100, '', { background: '#000', pointerEvents: 'none', zIndex: 50 });
-    function light(x, y) { dark.style.background = 'radial-gradient(circle at ' + x + 'px ' + y + 'px, transparent 0, transparent 3.2em, #000 5.5em)'; }
+    function light(x, y) { dark.style.background = 'radial-gradient(circle at ' + x + 'px ' + y + 'px, transparent 0, transparent 3em, #000 5em)'; }
     function pos(e) { const r = stage.getBoundingClientRect(); const p = e.touches ? e.touches[0] : e; return [p.clientX - r.left, p.clientY - r.top]; }
-    scene.addEventListener('click', e => { if (!flags.on && sel === 'fl') { flags.on = 1; sfx.tap(); toast('손전등을 켰어요. 화면을 누르거나 끌어서 비춰 봐요.'); light(...pos(e)); } });
+    scene.addEventListener('click', e => {
+      if (flags.on) return;
+      if (sel === 'fl') { flags.on = 1; sfx.tap(); toast('불이 켜졌어요. 화면을 누르거나 끌어서 비춰 봐요.'); light(...pos(e)); }
+      else if (sel === 'fl0') toast('딸깍… 켜지지 않아요.');
+    });
     const mv = e => { if (flags.on) light(...pos(e)); };
     scene.addEventListener('pointerdown', mv); scene.addEventListener('pointermove', mv);
-    scene.addEventListener('touchmove', e => { mv(e); }, { passive: true });
+    scene.addEventListener('touchmove', mv, { passive: true });
   } },
 
-/* 8. 피아노 */
-{ name: '음악실', hints: ['벽의 악보를 눌러 크게 봐요.', '건반은 왼쪽이 낮은 음, 오른쪽이 높은 음이에요.', '악보 점의 높낮이대로 건반 여섯 번을 눌러요.'],
+/* 8. 두 장의 악보, 건반 7개, 8음 */
+{ name: '음악실', hints: ['악보가 한 장이 아니에요.', '건반은 왼쪽이 낮은 소리예요.'],
   build() {
     room('linear-gradient(#5a2e45,#4a2538)', FLOOR_A);
-    makeDoor(8, 26, 22, 46);
-    const melody = [4, 2, 2, 3, 1, 1];
-    const sheet = put('obj', 40, 8, 50, 20, '', { background: '#fff8ea', borderRadius: '4px', boxShadow: '0 .2em .4em rgba(0,0,0,.4)' });
-    const staff = (big) => {
+    makeDoor(6, 26, 22, 46);
+    const melody = [4, 2, 2, 3, 1, 1, 0, 5];
+    const staff = (notes, big, mark) => {
       let s = '<div style="position:relative;width:100%;height:100%">';
-      for (let i = 0; i < 5; i++) s += '<i style="position:absolute;left:4%;right:4%;top:' + (16 + i * 17) + '%;height:' + (big ? 2 : 1) + 'px;background:#555"></i>';
-      melody.forEach((n, i) => s += '<b style="position:absolute;left:' + (10 + i * 14) + '%;top:' + (76 - n * 15) + '%;width:' + (big ? 22 : 10) + 'px;height:' + (big ? 16 : 7) + 'px;border-radius:50%;background:#222;transform:translateY(-50%) rotate(-20deg)"></b>');
-      return s + '</div>';
+      for (let i = 0; i < 5; i++) s += '<i style="position:absolute;left:4%;right:4%;top:' + (14 + i * 16) + '%;height:' + (big ? 2 : 1) + 'px;background:#555"></i>';
+      notes.forEach((n, i) => s += '<b style="position:absolute;left:' + (16 + i * 20) + '%;top:' + (84 - n * 11) + '%;width:' + (big ? 22 : 9) + 'px;height:' + (big ? 16 : 6) + 'px;border-radius:50%;background:#222;transform:translateY(-50%) rotate(-20deg)"></b>');
+      return s + '<span style="position:absolute;left:4%;top:2%;font-size:' + (big ? 16 : 8) + 'px;font-weight:800;color:#a33">' + mark + '</span></div>';
     };
-    sheet.innerHTML = staff(false);
-    on(sheet, () => zoom('벽에 붙은 악보', body => { const d = h('div', '', staff(true)); Object.assign(d.style, { width: '100%', height: '150px', background: '#fff8ea', borderRadius: '8px' }); body.appendChild(d); }));
-    const piano = put('obj', 40, 46, 54, 26, '', { background: '#1b1b1b', borderRadius: '6px 6px 2px 2px', padding: '6% 4% 0', display: 'flex', gap: '2%', alignItems: 'stretch' });
-    const freqs = [262, 294, 330, 349, 392]; let buf = [];
+    const sheet = put('obj', 36, 8, 34, 18, staff(melody.slice(0, 4), false, '1'), { background: '#fff8ea', borderRadius: '4px', boxShadow: '0 .2em .4em rgba(0,0,0,.4)' });
+    on(sheet, () => zoom('벽에 붙은 악보', b => { const d = h('div', '', staff(melody.slice(0, 4), true, '1')); Object.assign(d.style, { width: '100%', height: '150px', background: '#fff8ea', borderRadius: '8px' }); b.appendChild(d); }));
+    const piano = put('obj', 34, 44, 62, 26, '', { background: '#1b1b1b', borderRadius: '6px 6px 2px 2px', padding: '5% 3% 0', display: 'flex', gap: '1.5%', alignItems: 'stretch' });
+    const freqs = [262, 294, 330, 349, 392, 440, 494]; let buf = [];
     freqs.forEach((f, i) => {
       const k = h('button', '', ''); Object.assign(k.style, { flex: 1, background: 'linear-gradient(#fff,#e8e4dc)', borderRadius: '0 0 4px 4px', marginBottom: '8%' });
       k.onclick = e => {
         e.stopPropagation(); if (save.sound) tone(f, .5, 'triangle', .2); else sfx.tap();
         k.style.background = '#d7cfbf'; setTimeout(() => k.style.background = 'linear-gradient(#fff,#e8e4dc)', 150);
-        buf.push(i); buf = buf.slice(-6); if (buf.join() === melody.join()) unlock('아름다운 소리! 철컥, 문이 열렸어요.');
+        buf.push(i); buf = buf.slice(-8); if (buf.join() === melody.join()) unlock('아름다운 소리! 철컥, 문이 열렸어요.');
       };
       piano.appendChild(k);
     });
+    const bench = put('obj', 50, 76, 30, 8, '', { background: '#4a2e1c', borderRadius: '.3em', boxShadow: 'inset 0 .3em 0 #6b4a2e' });
+    on(bench, () => zoom(flags.bench ? '의자 속 악보' : '피아노 의자 뚜껑을 열었어요', b => { flags.bench = 1; const d = h('div', '', staff(melody.slice(4), true, '2')); Object.assign(d.style, { width: '100%', height: '150px', background: '#fff8ea', borderRadius: '8px' }); b.appendChild(d); }));
+    const mt = put('obj', 6, 76, 14, 12, '<span class="emo" style="font-size:2em">🎻</span>');
+    on(mt, () => toast('줄이 끊어진 바이올린이에요.'));
   } },
 
-/* 9. 저울 */
-{ name: '저울 방', hints: ['저울 왼쪽에 9kg 추가 올라가 있어요.', '선반의 추를 눌러 오른쪽 접시에 올리고 내릴 수 있어요.', '오른쪽 추의 합이 9kg이 되면 저울이 수평이 돼요.'],
+/* 9. 버려진 송장 + 추 세 개만 */
+{ name: '저울 방', hints: ['상자 무게를 알려주는 종이가 어딘가 버려져 있어요.', '벽에 붙은 규칙을 지켜야 해요.'],
   build() {
     room('linear-gradient(#4a4230,#3c3527)', 'linear-gradient(#5c5248,#4b433b)');
     makeDoor(70, 26, 24, 46);
-    const shelf = put('obj', 6, 14, 58, 3, '', { background: '#6b4a2e', borderRadius: '2px' });
-    const ws = [2, 3, 4, 6], onPan = [false, false, false, false];
-    const stand = put('obj', 37, 34, 2, 36, '', { background: '#8a7a5a' });
+    put('obj', 6, 14, 60, 3, '', { background: '#6b4a2e', borderRadius: '2px' });
+    const rule = put('note', 72, 10, 18, 10, '추는<br>세 개만', { fontSize: '.7em', lineHeight: 1.3, textAlign: 'center' });
+    on(rule, () => toast('"추는 세 개만" 이라고 적혀 있어요.'));
+    const ws = [1, 3, 4, 6, 7], onPan = ws.map(() => false), BOX = 11;
+    put('obj', 37, 34, 2, 36, '', { background: '#8a7a5a' });
     put('obj', 29, 69, 18, 3, '', { background: '#6b5c40', borderRadius: '3px' });
     const beam = put('obj', 16, 33, 44, 2.2, '', { background: '#b9a46e', borderRadius: '4px', transition: 'transform .4s', transformOrigin: '50% 50%' });
     function pan(side) {
       const hg = h('div', ''); Object.assign(hg.style, { position: 'absolute', top: '50%', [side]: '0', width: '0', height: '0', transition: 'transform .4s' });
-      hg.innerHTML = '<div style="position:absolute;left:-.05em;top:0;width:.1em;height:5em;background:#8a7a5a"></div><div class="dish" style="position:absolute;left:-3em;top:5em;width:6em;height:.5em;background:#b9a46e;border-radius:0 0 3em 3em"></div><div class="load" style="position:absolute;left:-3em;width:6em;bottom:-5em;display:flex;justify-content:center;align-items:flex-end;gap:.15em;flex-wrap:wrap-reverse"></div>';
+      hg.innerHTML = '<div style="position:absolute;left:-.05em;top:0;width:.1em;height:5em;background:#8a7a5a"></div><div style="position:absolute;left:-3em;top:5em;width:6em;height:.5em;background:#b9a46e;border-radius:0 0 3em 3em"></div><div class="load" style="position:absolute;left:-3em;width:6em;bottom:-5em;display:flex;justify-content:center;align-items:flex-end;gap:.15em;flex-wrap:wrap-reverse"></div>';
       beam.appendChild(hg); return hg;
     }
     const L = pan('left'), Rp = pan('right');
-    const chip = (w, big) => '<span style="display:inline-grid;place-items:center;min-width:' + (1.1 + w * .12) + 'em;height:' + (1 + w * .1) + 'em;padding:0 .2em;background:' + (big ? '#555' : '#777') + ';color:#fff;border-radius:.3em .3em .15em .15em;font-size:.75em;font-weight:800">' + w + 'kg</span>';
-    L.querySelector('.load').innerHTML = chip(9, true);
+    const chip = w => '<span style="display:inline-grid;place-items:center;min-width:' + (1.1 + w * .12) + 'em;height:' + (1 + w * .1) + 'em;padding:0 .2em;background:#777;color:#fff;border-radius:.3em .3em .15em .15em;font-size:.75em;font-weight:800">' + w + 'kg</span>';
+    L.querySelector('.load').innerHTML = '<span style="display:inline-grid;place-items:center;width:2.4em;height:2em;background:#a77b4b;color:#fff;border-radius:.2em;font-weight:900">?</span>';
     const sEls = ws.map((w, i) => {
-      const b = h('button', '', chip(w)); Object.assign(b.style, { position: 'absolute', left: (10 + i * 13) + '%', top: '7%', fontSize: '1em' });
+      const b = h('button', '', chip(w)); Object.assign(b.style, { position: 'absolute', left: (8 + i * 11.5) + '%', top: '7%', fontSize: '1em' });
       b.onclick = e => { e.stopPropagation(); if (unlocked) return; onPan[i] = !onPan[i]; sfx.tap(); draw(); };
       scene.appendChild(b); return b;
     });
+    let tmr = 0;
     function draw() {
       const load = Rp.querySelector('.load'); load.innerHTML = '';
-      let sum = 0;
-      ws.forEach((w, i) => { sEls[i].style.visibility = onPan[i] ? 'hidden' : 'visible'; if (onPan[i]) { sum += w; const s = h('span', '', chip(w)); s.style.cursor = 'pointer'; s.onclick = e => { e.stopPropagation(); if (unlocked) return; onPan[i] = false; sfx.tap(); draw(); }; load.appendChild(s); } });
-      const a = Math.max(-14, Math.min(14, (9 - sum) * -2.5));
+      let sum = 0, n = 0;
+      ws.forEach((w, i) => { sEls[i].style.visibility = onPan[i] ? 'hidden' : 'visible'; if (onPan[i]) { sum += w; n++; const s = h('span', '', chip(w)); s.style.cursor = 'pointer'; s.onclick = e => { e.stopPropagation(); if (unlocked) return; onPan[i] = false; sfx.tap(); draw(); }; load.appendChild(s); } });
+      const a = Math.max(-14, Math.min(14, (BOX - sum) * -2.5));
       beam.style.transform = 'rotate(' + a + 'deg)'; L.style.transform = Rp.style.transform = 'rotate(' + (-a) + 'deg)';
-      if (sum === 9) setTimeout(() => unlock('저울이 딱 수평이 됐어요. 철컥!'), 450);
+      clearTimeout(tmr);
+      if (sum === BOX) tmr = setTimeout(() => { if (n === 3) unlock('저울이 수평이 되자 철컥 소리가 났어요!'); else toast('수평이 됐는데… 아무 일도 일어나지 않아요.'); }, 450);
     }
     draw();
+    const bin = put('obj', 44, 76, 12, 14, '<span class="emo" style="font-size:2.2em">🗑️</span>');
+    on(bin, () => zoom('구겨진 송장', b => { b.innerHTML += paper('<div style="font-size:13px;color:#8a7a5a">택배 송장</div>내용물: 상자 1개<br>무게: <span style="font-size:28px">11kg</span>', 'font-size:18px;line-height:1.7;transform:rotate(-3deg)'); }));
   } },
 
-/* 10. 불 켜기 퍼즐 */
-{ name: '빛의 문', hints: ['문을 눌러 퍼즐을 열어요.', '칸을 누르면 그 칸과 위아래 양옆 칸이 함께 바뀌어요.', '아홉 칸이 모두 켜지면 성공이에요. 꺼진 칸의 가운데부터 눌러 보세요.'],
+/* 10. 4x4 불 켜기 */
+{ name: '빛의 문', hints: ['같은 칸을 두 번 누르면 제자리로 돌아와요.', '윗줄의 꺼진 칸은 바로 아래 칸을 눌러서 켤 수 있어요. 위에서부터 차례로 내려가 봐요.'],
   build() {
     room('linear-gradient(#22324a,#1b283c)', 'linear-gradient(#2c2c36,#24242c)');
-    let g = Array(9).fill(1);
-    const press = (arr, i) => { const r = i / 3 | 0, c = i % 3; [[0,0],[1,0],[-1,0],[0,1],[0,-1]].forEach(([dr, dc]) => { const R = r + dr, C = c + dc; if (R >= 0 && R < 3 && C >= 0 && C < 3) arr[R * 3 + C] ^= 1; }); };
-    do { g = Array(9).fill(1); for (let n = 0; n < 4; n++) press(g, Math.random() * 9 | 0); } while (g.every(x => x));
-    makeDoor(38, 26, 24, 46, () => zoom('아홉 칸을 모두 켜요', body => {
-      const box = h('div', 'lo'); body.appendChild(box);
-      const draw = () => { box.innerHTML = ''; g.forEach((v, i) => { const b = h('button', v ? 'on' : ''); b.onclick = () => { press(g, i); tone(400 + i * 40, .08, 'triangle'); draw(); if (g.every(x => x)) setTimeout(() => { closeZoom(); unlock(); }, 400); }; box.appendChild(b); }); };
+    const N = 4; let g;
+    const press = (arr, i) => { const r = i / N | 0, c = i % N; [[0,0],[1,0],[-1,0],[0,1],[0,-1]].forEach(([dr, dc]) => { const R = r + dr, C = c + dc; if (R >= 0 && R < N && C >= 0 && C < N) arr[R * N + C] ^= 1; }); };
+    do { g = Array(N * N).fill(1); const ps = new Set(); while (ps.size < 6) ps.add(Math.random() * N * N | 0); ps.forEach(i => press(g, i)); } while (g.filter(x => !x).length < 5);
+    makeDoor(38, 26, 24, 46, () => zoom('열여섯 칸을 모두 켜요', body => {
+      const box = h('div', 'lo'); box.style.gridTemplateColumns = 'repeat(4,66px)'; body.appendChild(box);
+      const draw = () => { box.innerHTML = ''; g.forEach((v, i) => { const b = h('button', v ? 'on' : ''); b.style.height = '66px'; b.onclick = () => { press(g, i); tone(400 + i * 25, .08, 'triangle'); draw(); if (g.every(x => x)) setTimeout(() => { closeZoom(); unlock(); }, 400); }; box.appendChild(b); }); };
       draw();
     }));
-    put('obj', 41, 32, 18, 16, '', { background: 'repeating-conic-gradient(#ffd659 0 25%,#4a4a2a 0 50%) 0 0/33.3% 33.3%', opacity: .5, pointerEvents: 'none', borderRadius: '3px' });
+    put('obj', 41, 32, 18, 16, '', { background: 'repeating-conic-gradient(#ffd659 0 25%,#4a4a2a 0 50%) 0 0/25% 25%', opacity: .5, pointerEvents: 'none', borderRadius: '3px' });
     const moon = put('obj', 76, 8, 16, 14, '<span class="emo" style="font-size:2.2em">🌙</span>', { background: '#0d1626', borderRadius: '6px', border: '.25em solid #556' });
     on(moon, () => toast('창밖에 달이 떠 있어요.'));
   } },
 
-/* 11. 손가락 방향 다이얼 */
-{ name: '바람의 방', hints: ['벽의 그림 네 개가 각각 어느 쪽을 가리키는지 봐요.', '문의 화살표 다이얼은 누를 때마다 시계 방향으로 돌아가요.', '화살표 네 개를 그림 순서대로 같은 방향으로 맞춰요.'],
+/* 11. 손가락 그림 + 뒷면 숫자 순서 */
+{ name: '바람의 방', hints: ['그림의 앞면만 보지 마세요.', '꼭 왼쪽부터 읽는 건 아니에요.'],
   build() {
     room('linear-gradient(#2f4d4a,#263e3c)', FLOOR_A);
-    const pics = ['👉', '☝️', '👈', '👇'], goal = [1, 0, 3, 2];
-    pics.forEach((p, i) => { const f = put('frame', 5 + i * 23.5, 6, 19, 15, '<span class="emo" style="font-size:2em">' + p + '</span>'); on(f, () => toast('손가락이 어딘가를 가리키는 그림이에요.')); });
+    const pics = [['☝️', 'Ⅲ'], ['👉', 'Ⅰ'], ['👇', 'Ⅳ'], ['👈', 'Ⅱ']], goal = [1, 3, 0, 2];
+    pics.forEach(([p, num], i) => {
+      const f = put('frame', 5 + i * 23.5, 6, 19, 15, '<span class="emo" style="font-size:2em">' + p + '</span>');
+      on(f, () => zoom('액자를 살짝 뒤집어 봤어요', b => { b.innerHTML += '<div style="width:140px;height:110px;background:#8b5e34;border-radius:6px;display:grid;place-items:center;font-size:48px;color:#f2e7d0;font-family:serif">' + num + '</div>'; }));
+    });
     let d; do { d = [0, 0, 0, 0].map(() => Math.random() * 4 | 0); } while (d.join() === goal.join());
     makeDoor(38, 28, 24, 44, () => zoom('화살표 다이얼', body => {
       const row = h('div', 'dials'); body.appendChild(row);
       d.forEach((v, i) => {
-        const b = h('button', '', '↑'); Object.assign(b.style, { width: '62px', height: '62px', borderRadius: '50%', background: '#121016', border: '2px solid #554', fontSize: '32px', color: 'var(--gold)', transition: 'transform .2s', transform: 'rotate(' + v * 90 + 'deg)' });
         let rot = v * 90;
+        const b = h('button', '', '↑'); Object.assign(b.style, { width: '62px', height: '62px', borderRadius: '50%', background: '#121016', border: '2px solid #554', fontSize: '32px', color: 'var(--gold)', transition: 'transform .2s', transform: 'rotate(' + rot + 'deg)' });
         b.onclick = () => { sfx.tap(); d[i] = (d[i] + 1) % 4; rot += 90; b.style.transform = 'rotate(' + rot + 'deg)'; if (d.join() === goal.join()) setTimeout(() => { closeZoom(); unlock(); }, 400); };
         row.appendChild(b);
       });
@@ -594,25 +677,26 @@ const ROOMS = [
     on(vane, () => toast('바람 종이 딸랑딸랑 울려요.'));
   } },
 
-/* 12. 마지막 방 */
-{ name: '마지막 방', hints: ['문 옆 쪽지에 물건 그림이 순서대로 그려져 있어요.', '물건마다 숫자가 하나씩 숨어 있어요. 책과 컵은 눌러서 살펴봐요.', '달력, 시계, 컵, 책 순서로 숫자를 이어 붙여요.'],
+/* 12. 지나온 방의 기억 → 금고 → 톱니바퀴 → 문 */
+{ name: '마지막 방', hints: ['지나온 방들을 떠올려 보세요. 방 고르기에서 다시 가 볼 수도 있어요.', '금고에서 나온 것은 문 근처에 쓰여요.'],
   build() {
     room('linear-gradient(#4a3a52,#3c2f44)', FLOOR_A);
-    makeDoor(38, 26, 24, 46, () => keypad(4, '1853', () => unlock('마지막 문이 열렸어요! 밖으로 나가요.')));
-    const cal = put('obj', 6, 10, 18, 20, '', { background: '#fff', borderRadius: '4px', boxShadow: '0 .2em .4em rgba(0,0,0,.4)', overflow: 'hidden', color: '#222' });
-    cal.innerHTML = '<div style="background:#d84a4a;color:#fff;font-size:.7em;font-weight:800;text-align:center;padding:.2em 0">12월</div><div style="display:grid;place-items:center;height:70%;font-size:2em;font-weight:900;position:relative">1<i style="position:absolute;width:1.3em;height:1.3em;border:.12em solid #d84a4a;border-radius:50%"></i></div>';
-    on(cal, () => toast('달력이에요. 1일에 동그라미가 쳐져 있어요.'));
-    const clock = put('obj', 76, 8, 18, 18, '', { background: '#fff8ea', borderRadius: '50%', border: '.3em solid #6b4a2e' });
-    clock.innerHTML = '<i style="position:absolute;left:50%;top:50%;width:.2em;height:30%;background:#222;transform-origin:50% 0;transform:translateX(-50%) rotate(60deg)"></i><i style="position:absolute;left:50%;top:50%;width:.12em;height:40%;background:#222;transform-origin:50% 0;transform:translateX(-50%) rotate(180deg)"></i><b style="position:absolute;left:46%;top:2%;font-size:.5em">12</b>';
-    on(clock, () => toast('시계가 멈춰 있어요. 짧은 바늘이 가리키는 시각은…'));
-    const table = put('obj', 66, 56, 30, 4, '', { background: '#6b4a2e', borderRadius: '3px' });
-    put('obj', 69, 60, 2, 12, '', { background: '#5a3b22' }); put('obj', 91, 60, 2, 12, '', { background: '#5a3b22' });
-    const cup = put('obj', 70, 46, 10, 10, '<span class="emo" style="font-size:1.8em">☕</span>');
-    on(cup, () => zoom('컵 바닥을 들여다봤어요', body => { body.innerHTML += '<div style="width:120px;height:120px;border-radius:50%;background:#e9e2d6;display:grid;place-items:center;font-size:56px;font-weight:900;color:#6b4a2e">5</div>'; }));
-    const book = put('obj', 82, 47, 10, 9, '<span class="emo" style="font-size:1.7em">📕</span>');
-    on(book, () => zoom('책을 펼쳤어요', body => { body.innerHTML += '<div style="display:flex;gap:4px"><div style="width:110px;height:140px;background:#fff8ea;border-radius:6px 0 0 6px;display:grid;place-items:center;color:#999">…</div><div style="width:110px;height:140px;background:#fff8ea;border-radius:0 6px 6px 0;display:grid;place-items:center;font-size:56px;font-weight:900;color:#3b2c1d">3</div></div><p>한 쪽에 커다란 숫자만 적혀 있어요.</p>'; }));
-    const note = put('note', 25, 50, 11, 9, '📝', { fontSize: '1.2em' });
-    on(note, () => zoom('쪽지', body => { body.innerHTML += '<div style="background:#fff8e3;padding:16px 20px;border-radius:8px;font-size:40px;letter-spacing:6px">📅 🕰️ ☕ 📕</div>'; }));
+    makeDoor(38, 26, 24, 46, () => { sfx.bad(); shake(door); toast('문 옆 장치가 헛돌아요.'); });
+    const mech = put('obj', 63, 40, 9, 10, '', { background: '#333', borderRadius: '.3em', border: '.15em solid #777' });
+    mech.innerHTML = '<span style="position:absolute;inset:0;display:grid;place-items:center;font-size:1.2em;opacity:.25">⚙️</span>';
+    on(mech, () => {
+      if (flags.gear) return;
+      if (sel === 'gear') { take('gear'); flags.gear = 1; mech.firstChild.style.opacity = 1; unlock('톱니바퀴가 맞물려 돌아가요. 마지막 문이 열렸어요!'); }
+      else toast('톱니바퀴 하나가 빠진 자리가 있어요.');
+    });
+    const note = put('note', 8, 12, 24, 22, '📜', { fontSize: '1.4em' });
+    on(note, () => zoom('벽에 붙은 편지', b => { b.innerHTML += paper('지나온 길을 기억하나요?<br><br>① 첫 방 시계의 짧은 바늘<br>② 별 그림 방 자물쇠의 가운데<br>③ 어둠 속 첫 번째 붉은 숫자<br>④ 버려진 송장, 무게의 첫 자리', 'font-size:15px;line-height:1.7;text-align:left'); }));
+    const safe = put('obj', 70, 54, 24, 20, '<i style="position:absolute;left:62%;top:35%;width:1.2em;height:1.2em;border-radius:50%;border:.2em solid #aaa"></i>', { background: 'linear-gradient(#555,#3a3a3a)', borderRadius: '.4em', boxShadow: 'inset 0 0 0 .25em #2a2a2a' });
+    on(safe, () => { if (flags.safe) { toast('빈 금고예요.'); return; } keypad(4, '7451', () => { flags.safe = 1; sfx.unlock(); give('gear', '⚙️', '톱니바퀴'); }); });
+    const cup = put('obj', 10, 60, 10, 10, '<span class="emo" style="font-size:1.8em">☕</span>');
+    on(cup, () => toast('식은 커피예요.'));
+    const cal = put('obj', 76, 10, 16, 18, '<div style="background:#d84a4a;color:#fff;font-size:.6em;font-weight:800;text-align:center;padding:.2em 0">12월</div><div style="display:grid;place-items:center;height:68%;font-size:1.6em;font-weight:900;color:#222">25</div>', { background: '#fff', borderRadius: '4px', overflow: 'hidden' });
+    on(cal, () => toast('달력이에요. 25일이 크게 적혀 있어요.'));
   } },
 ];
 
@@ -640,12 +724,18 @@ $('resumeBtn').onclick = () => $('menuScreen').hidden = true;
 $('restartBtn').onclick = () => startRoom(cur);
 $('menuSelect').onclick = showSelect;
 $('soundBtn').onclick = () => { save.sound = !save.sound; persist(); $('soundBtn').textContent = save.sound ? '소리 끄기' : '소리 켜기'; };
+const HINT_WAIT = 180;
+let hintTimer = 0;
 function drawHints() {
   const hs = ROOMS[cur].hints; $('hintList').innerHTML = hs.slice(0, hintsShown).map((t, i) => '<p><b>' + (i + 1) + '</b>' + t + '</p>').join('');
-  $('moreHint').hidden = hintsShown >= hs.length;
+  const more = $('moreHint'); more.hidden = hintsShown >= hs.length;
+  const left = HINT_WAIT - Math.floor((Date.now() - startTime) / 1000);
+  more.disabled = left > 0; more.style.opacity = left > 0 ? .45 : 1;
+  more.textContent = left > 0 ? '두 번째 힌트까지 ' + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0') : '두 번째 힌트 보기';
+  clearTimeout(hintTimer); if (!more.hidden && left > 0 && !$('hintScreen').hidden) hintTimer = setTimeout(drawHints, 1000);
 }
-$('hintBtn').onclick = () => { drawHints(); $('hintScreen').hidden = false; };
-$('moreHint').onclick = () => { hintsShown++; drawHints(); };
+$('hintBtn').onclick = () => { $('hintScreen').hidden = false; drawHints(); };
+$('moreHint').onclick = () => { if ((Date.now() - startTime) / 1000 < HINT_WAIT) return; hintsShown++; drawHints(); };
 $('hintClose').onclick = () => $('hintScreen').hidden = true;
 
 fit(); startRoom(save.last != null && save.last < ROOMS.length ? save.last : 0);
