@@ -6,13 +6,13 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="열두 방 탈출">
+<meta name="apple-mobile-web-app-title" content="잠긴 저택">
 <meta name="theme-color" content="#16131c">
 <meta name="robots" content="noindex,nofollow">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" href="icon-192.png">
-<title>열두 방 탈출</title>
+<title>잠긴 저택</title>
 <style>
 :root{
   --bg:#16131c; --panel:#221d2b; --line:rgba(255,240,220,.14);
@@ -110,6 +110,12 @@ p{margin:0;line-height:1.6;color:var(--dim)}
 .lo{display:grid;grid-template-columns:repeat(3,84px);gap:8px}
 .lo button{height:84px;border-radius:14px;background:#2b2735;border:2px solid #3a3445;transition:background .15s}
 .lo button.on{background:radial-gradient(circle,#fff6c9,#f0c264);border-color:#ffe39a;box-shadow:0 0 18px rgba(240,194,100,.7)}
+.nav{position:absolute;top:44%;width:2.1em;height:3em;border-radius:.6em;background:rgba(15,12,20,.55);color:#fff;font-size:1.3em;line-height:1;z-index:80;display:grid;place-items:center;border:1px solid rgba(255,255,255,.18)}
+.nav:active{background:rgba(240,194,100,.5)}
+.viewlab{position:absolute;left:50%;top:1%;transform:translateX(-50%);z-index:80;font-size:.55em;color:#fff;background:rgba(15,12,20,.55);padding:.25em .8em;border-radius:1em;white-space:nowrap;pointer-events:none}
+.viewlab span{letter-spacing:.15em;color:var(--gold);margin-left:.3em}
+#inv{flex-wrap:wrap}
+.slot{width:50px;height:50px;font-size:26px}
 </style>
 </head>
 <body>
@@ -127,14 +133,16 @@ p{margin:0;line-height:1.6;color:var(--dim)}
 
 <div class="screen" id="titleScreen">
   <div class="card">
-    <div style="font-size:64px">🚪🗝️</div>
-    <h1>열두 방 탈출</h1>
-    <p>잠긴 방 열두 개가 차례로 기다려요.<br>물건을 눌러 살펴보고, 단서를 모아 문을 여세요.</p>
+    <div style="font-size:64px">🏚️🗝️</div>
+    <h1>잠긴 저택</h1>
+    <p>저택의 방 열두 개가 차례로 잠겨 있어요.<br>방마다 네 벽을 둘러보며 퍼즐 일곱 개 이상을 풀어야 나갈 수 있어요.</p>
     <div class="hintbox">
+      <p><b>둘러보기</b>화면 양옆의 ‹ › 로 벽을 넘겨요</p>
       <p><b>살펴보기</b>방 안의 물건을 눌러요</p>
       <p><b>아이템</b>아래 칸의 물건을 눌러 고른 뒤, 쓸 곳을 눌러요</p>
       <p><b>조합</b>아이템을 고른 채로 다른 아이템을 누르면 합쳐져요</p>
-      <p><b>힌트</b>💡는 방마다 두 개뿐. 두 번째는 3분 뒤에 열려요</p>
+      <p><b>힌트</b>💡 힌트는 방에 들어온 뒤 2분마다 하나씩 열려요</p>
+      <p><b>저장</b>방 안에서 풀어 둔 것도 저절로 저장돼요</p>
     </div>
     <button class="btn" id="playBtn">시작하기</button>
     <button class="btn ghost" id="selectBtn">방 고르기</button>
@@ -184,8 +192,8 @@ const $ = id => document.getElementById(id);
 let scene = $('scene'); const stage = $('stage');
 
 /* ---------- save ---------- */
-const SAVE_KEY = 'escape12-save';
-let save = { cleared: [], sound: true };
+const SAVE_KEY = 'mansion-save';
+let save = { cleared: [], sound: true, prog: null };
 try { save = Object.assign(save, JSON.parse(localStorage.getItem(SAVE_KEY) || '{}')); } catch (e) {}
 function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
 
@@ -201,7 +209,7 @@ function tone(f, dur = .12, type = 'sine', vol = .15, when = 0) {
 const sfx = {
   tap: () => tone(520, .05, 'triangle', .08),
   get: () => { tone(660, .1, 'triangle'); tone(990, .15, 'triangle', .15, .08); },
-  bad: () => { tone(160, .18, 'square', .07); },
+  bad: () => tone(160, .18, 'square', .07),
   unlock: () => { tone(523, .1, 'triangle'); tone(659, .1, 'triangle', .15, .09); tone(784, .22, 'triangle', .15, .18); },
   door: () => { tone(220, .3, 'sawtooth', .05); tone(330, .4, 'sine', .1, .1); },
   win: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, .25, 'triangle', .14, i * .12)),
@@ -210,134 +218,255 @@ const sfx = {
 /* ---------- layout ---------- */
 function fit() {
   const w = $('wrap').clientWidth - 24, h = $('wrap').clientHeight - 8;
-  let sw = Math.min(w, h * 3 / 4, 520), sh = sw * 4 / 3;
-  stage.style.width = sw + 'px'; stage.style.height = sh + 'px';
-  stage.style.fontSize = (sw / 22) + 'px';
+  const sw = Math.min(w, h * 3 / 4, 520);
+  stage.style.width = sw + 'px'; stage.style.height = sw * 4 / 3 + 'px'; stage.style.fontSize = (sw / 22) + 'px';
 }
 addEventListener('resize', fit);
-
-/* ---------- toast ---------- */
 let toastT = 0;
-function toast(t) { const e = $('toast'); e.textContent = t; e.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => e.classList.remove('on'), 2200); }
+function toast(t) { const e = $('toast'); e.textContent = t; e.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => e.classList.remove('on'), 2400); }
 
-/* ---------- inventory ---------- */
+/* ---------- items ---------- */
+const ITEMS = {
+  sc: ['✂️', '가위'], skey: ['🗝️', '작은 열쇠'], fl0: ['🔦', '손전등 (건전지 없음)'], bat: ['🔋', '건전지'], fl: ['🔦', '손전등'],
+  drv: ['🪛', '드라이버'], kA: ['🔑', '열쇠 조각 (머리)'], kB: ['🦯', '열쇠 조각 (몸통)'], key: ['🔑', '열쇠'],
+  match: ['🔥', '성냥'], gear: ['⚙️', '톱니바퀴'], ham: ['🔨', '망치'], card: ['💳', '카드키'],
+  mag: ['🧲', '자석'], str: ['🧵', '실타래'], rod: ['🎣', '자석 낚싯줄'], fuse: ['🔌', '퓨즈'], glove: ['🧤', '장갑'], valve: ['🔧', '밸브 손잡이'],
+  pick: ['⛏️', '곡괭이'], mirror: ['🪞', '손거울'], handle: ['🔩', '문 손잡이'],
+  rec: ['💿', '레코드판'], needle: ['📍', '바늘'], fork: ['🎵', '소리굽쇠'],
+  lens: ['🔍', '렌즈'], w7: ['🥌', '2kg 추'], gkey: ['🗝️', '금빛 열쇠'],
+};
 let inv = [], sel = null;
 function drawInv() {
   const box = $('inv'); box.innerHTML = '';
-  for (let i = 0; i < 5; i++) {
-    const it = inv[i]; const b = document.createElement('button'); b.className = 'slot' + (it && sel === it.id ? ' sel' : '');
-    if (it) { b.textContent = it.emo; b.setAttribute('aria-label', it.name); b.onclick = () => { sfx.tap(); if (sel && sel !== it.id && tryCombine(sel, it.id)) return; sel = sel === it.id ? null : it.id; if (sel) toast(it.name + ' 을(를) 골랐어요.'); drawInv(); }; }
+  for (let i = 0; i < Math.max(6, inv.length); i++) {
+    const id = inv[i]; const b = document.createElement('button'); b.className = 'slot' + (id && sel === id ? ' sel' : '');
+    if (id) {
+      b.textContent = ITEMS[id][0]; b.setAttribute('aria-label', ITEMS[id][1]);
+      b.onclick = () => { sfx.tap(); if (sel && sel !== id && tryCombine(sel, id)) return; sel = sel === id ? null : id; if (sel) toast(ITEMS[id][1] + ' 을(를) 골랐어요.'); drawInv(); };
+    }
     box.appendChild(b);
   }
 }
 function tryCombine(a, b) {
-  const c = (ROOMS[cur].combos || {}), r = c[a + '+' + b] || c[b + '+' + a];
-  if (!r) return false;
-  inv = inv.filter(i => i.id !== a && i.id !== b); sel = null; inv.push({ id: r[0], emo: r[1], name: r[2] });
-  sfx.get(); toast('두 물건을 합쳐서 ' + r[2] + ' 을(를) 만들었어요!'); drawInv(); return true;
+  const c = ROOMS[cur].combos || {}, r = c[a + '+' + b] || c[b + '+' + a];
+  if (!r) { return false; }
+  inv = inv.filter(i => i !== a && i !== b); sel = null; inv.push(r);
+  sfx.get(); toast('두 물건을 합쳐서 ' + ITEMS[r][1] + ' 을(를) 만들었어요!'); saveProg(); drawInv(); return true;
 }
-function give(id, emo, name) { inv.push({ id, emo, name }); sfx.get(); toast(name + ' 을(를) 얻었어요!'); drawInv(); }
-function take(id) { inv = inv.filter(i => i.id !== id); if (sel === id) sel = null; drawInv(); }
+function give(id) { if (!inv.includes(id)) inv.push(id); sfx.get(); toast(ITEMS[id][1] + ' 을(를) 얻었어요!'); saveProg(); drawInv(); }
+function take(id) { inv = inv.filter(i => i !== id); if (sel === id) sel = null; saveProg(); drawInv(); }
+const has = id => sel === id;
 
-/* ---------- zoom panel ---------- */
+/* ---------- zoom ---------- */
 function zoom(title, build) {
   const body = $('zoomBody'); body.innerHTML = '';
-  if (title) { const t = document.createElement('div'); t.className = 'ztitle'; t.textContent = title; body.appendChild(t); }
+  if (title) body.appendChild(h('div', 'ztitle', title));
   build(body); $('zoom').hidden = false;
 }
 function closeZoom() { $('zoom').hidden = true; }
 $('zoomClose').onclick = closeZoom;
 $('zoom').addEventListener('click', e => { if (e.target.id === 'zoom') closeZoom(); });
 
-/* ---------- helpers ---------- */
+/* ---------- dom helpers ---------- */
 function h(tag, cls, html) { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
 function put(cls, x, y, w, hh, html, style) {
   const e = h('div', cls, html); Object.assign(e.style, { left: x + '%', top: y + '%', width: w + '%', height: hh + '%' }, style || {});
   scene.appendChild(e); return e;
 }
 function on(e, fn) { e.classList.add('tapme'); e.addEventListener('click', ev => { ev.stopPropagation(); fn(ev); }); return e; }
+function O(x, y, w, hh, html, style, fn) { const e = put('obj', x, y, w, hh, html, style); if (fn) on(e, fn); return e; }
+function EM(x, y, w, hh, emo, size, fn, style) { return O(x, y, w, hh, '<span class="emo" style="font-size:' + size + 'em">' + emo + '</span>', style, fn); }
+function NOTE(x, y, w, hh, emo, fn) { const e = put('note', x, y, w, hh, emo, { fontSize: '1.2em' }); on(e, fn); return e; }
 function shake(e) { e.classList.remove('shake'); void e.offsetWidth; e.classList.add('shake'); }
+const paper = (inner, extra) => '<div style="background:#fff8e3;color:#3b2c1d;padding:16px 20px;border-radius:8px;font-weight:800;line-height:1.7;' + (extra || '') + '">' + inner + '</div>';
+const look = (title, html) => zoom(title, b => { b.insertAdjacentHTML('beforeend', html); });
 
-function keypad(len, code, ok) {
-  zoom('숫자 ' + len + '자리를 눌러요', body => {
-    let v = '';
-    const d = h('div', 'display'); d.textContent = '·'.repeat(len); body.appendChild(d);
+/* ---------- room state ---------- */
+let cur = 0, view = 0, F = {}, startTime = 0, door = null;
+const VIEW_NAMES = ['정면', '오른쪽 벽', '뒤쪽 벽', '왼쪽 벽'];
+function saveProg() { save.prog = { room: cur, view, F, inv, t: Date.now() - startTime }; persist(); }
+function set(k, v = 1) { F[k] = v; saveProg(); render(); }
+function render() {
+  const ns = document.createElement('div'); ns.id = 'scene'; scene.replaceWith(ns); scene = ns;
+  const R = ROOMS[cur], th = R.theme[view] || R.theme[0];
+  put('wall', 0, 0, 100, 72, '', { background: th[0] });
+  put('floor', 0, 72, 100, 28, '', { background: th[1] });
+  put('base', 0, 71, 100, 2);
+  door = null;
+  R.views[view]();
+  // darkness
+  if (R.dark && R.dark()) {
+    const d = O(0, 0, 100, 100, '', { background: '#000', pointerEvents: 'none', zIndex: 50 });
+    const light = (x, y) => d.style.background = 'radial-gradient(circle at ' + x + 'px ' + y + 'px, transparent 0, transparent 3em, #000 5.2em)';
+    const pos = e => { const r = stage.getBoundingClientRect(); const p = e.touches ? e.touches[0] : e; return [p.clientX - r.left, p.clientY - r.top]; };
+    if (F.on) { light(-999, -999); const mv = e => light(...pos(e)); scene.addEventListener('pointerdown', mv); scene.addEventListener('pointermove', mv); scene.addEventListener('touchmove', mv, { passive: true }); }
+    scene.addEventListener('click', e => { if (!F.on && sel === 'fl') { F.on = 1; saveProg(); sfx.tap(); toast('손전등을 켰어요. 화면을 누르거나 끌어서 비춰 봐요.'); render(); } else if (!F.on && sel === 'fl0') toast('딸깍… 켜지지 않아요.'); });
+  }
+  // navigation
+  const nav = (dir, txt, side) => { const b = h('button', 'nav', txt); b.style[side] = '1.5%'; b.onclick = e => { e.stopPropagation(); sfx.tap(); view = (view + dir + 4) % 4; saveProg(); render(); }; scene.appendChild(b); };
+  nav(-1, '‹', 'left'); nav(1, '›', 'right');
+  const lab = h('div', 'viewlab', VIEW_NAMES[view] + ' <span>' + [0, 1, 2, 3].map(i => i === view ? '●' : '○').join('') + '</span>'); scene.appendChild(lab);
+}
+function makeDoor(lockedFn) {
+  door = O(36, 24, 28, 48, '<div class="light"></div><div class="knob"></div><div class="lock">' + (F.door ? '🔓' : '🔒') + '</div>', {}, () => {
+    if (F.door) { if (!door.classList.contains('open')) { door.classList.add('open'); sfx.door(); setTimeout(cleared, 650); } }
+    else if (lockedFn) lockedFn(); else { sfx.bad(); shake(door); toast('문이 잠겨 있어요.'); }
+  });
+  door.className = 'door tapme';
+  return door;
+}
+function unlockDoor(msg) { if (F.door) return; sfx.unlock(); toast(msg || '철컥! 마지막 잠금이 풀렸어요. 문을 눌러 나가요.'); set('door'); }
+function solved(k, msg) { sfx.unlock(); if (msg) toast(msg); set(k); }
+
+/* ---------- widgets ---------- */
+function wDial(title, code, done) {
+  zoom(title, body => {
+    const vals = code.split('').map(() => 0), row = h('div', 'dials'); body.appendChild(row); let ok = false;
+    vals.forEach((_, i) => {
+      const d = h('div', 'dial'), up = h('button', '', '▲'), num = h('div', 'num', '0'), dn = h('button', '', '▼');
+      const chg = s => { sfx.tap(); vals[i] = (vals[i] + s + 10) % 10; num.textContent = vals[i]; if (!ok && vals.join('') === code) { ok = true; setTimeout(() => { closeZoom(); done(); }, 300); } };
+      up.onclick = () => chg(1); dn.onclick = () => chg(-1); d.append(up, num, dn); row.appendChild(d);
+    });
+  });
+}
+function wSym(title, syms, code, done) {
+  zoom(title, body => {
+    const vals = code.map(() => 0), row = h('div', 'dials'); body.appendChild(row); let ok = false;
+    vals.forEach((_, i) => {
+      const b = h('button', 'num', syms[0]); b.style.cssText = 'width:60px;height:70px;border-radius:12px;background:#121016;border:1px solid var(--line);font-size:34px;color:var(--gold)';
+      b.onclick = () => { sfx.tap(); vals[i] = (vals[i] + 1) % syms.length; b.textContent = syms[vals[i]]; if (!ok && vals.every((v, k) => syms[v] === code[k])) { ok = true; setTimeout(() => { closeZoom(); done(); }, 300); } };
+      row.appendChild(b);
+    });
+    body.appendChild(h('p', '', '누를 때마다 모양이 바뀌어요'));
+  });
+}
+function wKeypad(title, code, done) {
+  zoom(title, body => {
+    let v = ''; const len = code.length;
+    const d = h('div', 'display', '·'.repeat(len)); body.appendChild(d);
     const k = h('div', 'keys'); body.appendChild(k);
     const show = () => d.textContent = (v + '·'.repeat(len)).slice(0, len);
     ['1','2','3','4','5','6','7','8','9','⌫','0','✓'].forEach(c => {
       const b = h('button', 'key', c); k.appendChild(b);
-      b.onclick = () => {
-        sfx.tap();
+      b.onclick = () => { sfx.tap();
         if (c === '⌫') v = v.slice(0, -1);
-        else if (c === '✓') { if (v === code) { closeZoom(); ok(); } else { sfx.bad(); shake(d); v = ''; } }
+        else if (c === '✓') { if (v === code) { closeZoom(); done(); } else { sfx.bad(); shake(d); v = ''; } }
         else if (v.length < len) v += c;
-        show();
-      };
+        show(); };
     });
   });
 }
-
-/* ---------- room runtime ---------- */
-let cur = 0, door = null, unlocked = false, flags = {}, startTime = 0, hintsShown = 1;
-function room(wall, floor) {
-  put('wall', 0, 0, 100, 72, '', { background: wall });
-  put('floor', 0, 72, 100, 28, '', { background: floor });
-  put('base', 0, 71, 100, 2);
-}
-function makeDoor(x = 38, y = 26, w = 24, hh = 46, lockedFn) {
-  door = put('door', x, y, w, hh, '<div class="light"></div><div class="knob"></div><div class="lock">🔒</div>');
-  on(door, () => {
-    if (unlocked) { if (!door.classList.contains('open')) { door.classList.add('open'); sfx.door(); setTimeout(cleared, 650); } }
-    else if (lockedFn) lockedFn(); else { sfx.bad(); shake(door); toast('문이 잠겨 있어요.'); }
-  });
-  return door;
-}
-function unlock(msg) {
-  if (unlocked) return; unlocked = true; sfx.unlock();
-  const l = door.querySelector('.lock'); if (l) l.textContent = '🔓';
-  door.classList.add('pop'); toast(msg || '철컥! 문이 열렸어요. 문을 눌러 나가요.');
-}
-
-function startRoom(i) {
-  cur = i; const ns = document.createElement('div'); ns.id = 'scene'; scene.replaceWith(ns); scene = ns; inv = []; sel = null; unlocked = false; flags = {}; hintsShown = 1; door = null;
-  const R = ROOMS[i];
-  $('roomName').innerHTML = '방 ' + (i + 1) + ' <small>' + R.name + '</small>';
-  fit(); R.build(); drawInv(); $('toast').classList.remove('on'); startTime = Date.now();
-  ['titleScreen','selectScreen','clearScreen','menuScreen','hintScreen'].forEach(s => $(s).hidden = true);
-  closeZoom(); save.last = i; persist();
-}
-function cleared() {
-  if (!save.cleared.includes(cur)) save.cleared.push(cur); persist();
-  const sec = Math.round((Date.now() - startTime) / 1000), t = sec >= 60 ? Math.floor(sec / 60) + '분 ' + (sec % 60) + '초' : sec + '초';
-  const last = cur === ROOMS.length - 1;
-  sfx.win();
-  $('clearEmo').textContent = last ? '🏆' : '🎉';
-  $('clearTitle').textContent = last ? '모든 방을 탈출했어요!' : '방 ' + (cur + 1) + ' 탈출!';
-  $('clearText').textContent = (last ? '열두 개의 방을 모두 빠져나왔어요. 정말 대단해요! ' : '') + '걸린 시간 ' + t;
-  $('nextBtn').textContent = last ? '처음 방부터 다시' : '다음 방으로';
-  $('clearScreen').hidden = false;
-}
-$('nextBtn').onclick = () => startRoom(cur === ROOMS.length - 1 ? 0 : cur + 1);
-
-/* =========================================================
-   ROOMS
-   ========================================================= */
-const WALL_A = 'linear-gradient(#4a3f5c,#3b3249)', FLOOR_A = 'repeating-linear-gradient(90deg,#5b3b25 0 12%,#523421 12% 24%)';
-
-/* shared widgets */
-function dialLock(title, code, ok) {
+function wSeq(title, colors, goal, done, shapeFn) {
   zoom(title, body => {
-    const vals = code.split('').map(() => 0);
-    const row = h('div', 'dials'); body.appendChild(row);
-    vals.forEach((_, i) => {
-      const d = h('div', 'dial');
-      const up = h('button', '', '▲'), num = h('div', 'num', '0'), dn = h('button', '', '▼');
-      up.onclick = () => { sfx.tap(); vals[i] = (vals[i] + 1) % 10; num.textContent = vals[i]; check(); };
-      dn.onclick = () => { sfx.tap(); vals[i] = (vals[i] + 9) % 10; num.textContent = vals[i]; check(); };
-      d.append(up, num, dn); row.appendChild(d);
+    let seq = []; const row = h('div', ''); row.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;justify-content:center'; body.appendChild(row);
+    const st = h('p', '', '순서대로 눌러요'); body.appendChild(st);
+    colors.forEach((c, i) => {
+      const b = h('button', '', shapeFn ? shapeFn(i) : ''); b.style.cssText = shapeFn ? 'min-width:56px;height:70px;border-radius:12px;background:#3a3345' : 'width:56px;height:56px;border-radius:50%;box-shadow:inset 0 -4px rgba(0,0,0,.3);background:' + c;
+      b.onclick = () => { tone(300 + i * 70, .12, 'triangle'); seq.push(i);
+        if (!seq.every((s, k) => s === goal[k])) { seq = []; sfx.bad(); shake(row); st.textContent = '삐- 처음부터 다시'; }
+        else { st.textContent = '●'.repeat(seq.length) + '○'.repeat(goal.length - seq.length); if (seq.length === goal.length) setTimeout(() => { closeZoom(); done(); }, 350); } };
+      row.appendChild(b);
     });
-    let done = false;
-    function check() { if (!done && vals.join('') === code) { done = true; setTimeout(() => { closeZoom(); ok(); }, 300); } }
+  });
+}
+function wSwitch(title, key, masks, goal, done) {
+  zoom(title, body => {
+    const st = F[key] || masks.map(() => 0);
+    const bulbs = h('div', ''); bulbs.style.cssText = 'display:flex;gap:12px'; body.appendChild(bulbs);
+    const sws = h('div', ''); sws.style.cssText = 'display:flex;gap:10px;background:#d8d2c4;padding:12px;border-radius:10px'; body.appendChild(sws);
+    const state = () => { const b = goal.map(() => 0); st.forEach((s, i) => { if (s) masks[i].forEach(k => b[k] ^= 1); }); return b; };
+    const draw = () => {
+      const b = state();
+      bulbs.innerHTML = b.map(v => '<span style="width:34px;height:34px;border-radius:50%;' + (v ? 'background:radial-gradient(circle,#fffbe0,#ffc93c);box-shadow:0 0 14px #ffc93c' : 'background:#555') + '"></span>').join('');
+      sws.innerHTML = '';
+      st.forEach((s, i) => { const w = h('button', '', '<i style="position:absolute;left:20%;right:20%;height:40%;top:' + (s ? 52 : 8) + '%;background:#888;border-radius:3px"></i>'); w.style.cssText = 'position:relative;width:36px;height:60px;background:#f4f0e6;border:1px solid #aaa;border-radius:5px';
+        w.onclick = () => { sfx.tap(); st[i] ^= 1; F[key] = st; saveProg(); draw(); if (state().join() === goal.join()) setTimeout(() => { closeZoom(); done(); }, 400); }; sws.appendChild(w); });
+    };
+    draw();
+  });
+}
+function lightsPress(arr, N, i) { const r = i / N | 0, c = i % N; [[0,0],[1,0],[-1,0],[0,1],[0,-1]].forEach(([dr, dc]) => { const R = r + dr, C = c + dc; if (R >= 0 && R < N && C >= 0 && C < N) arr[R * N + C] ^= 1; }); }
+function wLights(title, key, N, done) {
+  if (!F[key]) { let g; do { g = Array(N * N).fill(1); const ps = new Set(); while (ps.size < N + 2) ps.add(Math.random() * N * N | 0); ps.forEach(i => lightsPress(g, N, i)); } while (g.filter(x => !x).length < N + 1); F[key] = g; saveProg(); }
+  zoom(title, body => {
+    const g = F[key], sz = N === 3 ? 80 : 64, box = h('div', 'lo'); box.style.gridTemplateColumns = 'repeat(' + N + ',' + sz + 'px)'; body.appendChild(box);
+    const draw = () => { box.innerHTML = ''; g.forEach((v, i) => { const b = h('button', v ? 'on' : ''); b.style.height = sz + 'px'; b.onclick = () => { lightsPress(g, N, i); saveProg(); tone(400 + i * 25, .08, 'triangle'); draw(); if (g.every(x => x)) setTimeout(() => { closeZoom(); done(); }, 400); }; box.appendChild(b); }); };
+    draw(); body.appendChild(h('p', '', '칸을 모두 켜면 열려요'));
+  });
+}
+const PICS = {
+  hills: 'radial-gradient(circle at 72% 24%,#ffd659 0 9%,transparent 9.5%),linear-gradient(150deg,transparent 52%,#2e7d4f 52.5% 70%,transparent 70.5%),linear-gradient(210deg,transparent 58%,#1f5a39 58.5%),radial-gradient(ellipse at 25% 35%,#fff 0 6%,transparent 6.5%),radial-gradient(ellipse at 32% 33%,#fff 0 6%,transparent 6.5%),linear-gradient(#5aa9e6,#f7c59f)',
+  night: 'radial-gradient(circle at 30% 30%,#fff6c9 0 11%,transparent 11.5%),radial-gradient(circle at 70% 20%,#fff 0 1.5%,transparent 2%),radial-gradient(circle at 80% 45%,#fff 0 1.5%,transparent 2%),radial-gradient(circle at 55% 12%,#fff 0 1.2%,transparent 1.7%),linear-gradient(170deg,transparent 60%,#3b2a5a 60.5%),linear-gradient(#0d1b3a,#4b3a7a)',
+  sea: 'radial-gradient(circle at 25% 25%,#ffb347 0 10%,transparent 10.5%),repeating-linear-gradient(0deg,transparent 0 6%,rgba(255,255,255,.18) 6% 7%),linear-gradient(transparent 55%,#1d6fa3 55.5%),linear-gradient(#ff9a76,#ffd3a5)',
+};
+const PIC_WORD = { hills: '탈출', night: '별빛', sea: '바다' };
+function picPiece(pic, k, sz) { const r = (k - 1) / 3 | 0, c = (k - 1) % 3; return '<div style="width:' + sz + 'px;height:' + sz + 'px;border-radius:8px;background:' + PICS[pic] + ';background-size:' + sz * 3 + 'px ' + sz * 3 + 'px;background-position:-' + c * sz + 'px -' + r * sz + 'px;position:relative;overflow:hidden"><b style="position:absolute;left:' + (-c * sz) + 'px;top:' + (-r * sz) + 'px;width:' + sz * 3 + 'px;height:' + sz * 3 + 'px;display:grid;place-items:end center;padding-bottom:' + sz * .35 + 'px;font-size:' + sz * .62 + 'px;color:rgba(255,255,255,.85);text-shadow:0 2px 6px rgba(0,0,0,.4);letter-spacing:.1em">' + PIC_WORD[pic] + '</b></div>'; }
+function picFull(pic, sz) { let s = '<div style="display:grid;grid-template-columns:repeat(3,' + sz + 'px)">'; for (let k = 1; k <= 9; k++) s += k < 9 ? picPiece(pic, k, sz).replace('border-radius:8px', 'border-radius:0') : '<div style="width:' + sz + 'px;height:' + sz + 'px;background:#121016"></div>'; return s + '</div>'; }
+function wSlide(title, key, pic, done) {
+  if (!F[key]) { let t = [1, 2, 3, 4, 5, 6, 7, 8, 0], last = -1; do { for (let n = 0; n < 140; n++) { const e = t.indexOf(0), r = e / 3 | 0, c = e % 3, nb = []; if (r > 0) nb.push(e - 3); if (r < 2) nb.push(e + 3); if (c > 0) nb.push(e - 1); if (c < 2) nb.push(e + 1); const o = nb.filter(x => x !== last), m = o[Math.random() * o.length | 0]; last = e; t[e] = t[m]; t[m] = 0; } } while (t.slice(0, 8).filter((v, i) => v === i + 1).length > 2); F[key] = t; saveProg(); }
+  zoom(title, body => {
+    const t = F[key], g = h('div', 'slide'); body.appendChild(g);
+    const draw = () => { g.innerHTML = ''; t.forEach((v, i) => { const b = h('button', 'tile' + (v ? '' : ' empty'), v ? picPiece(pic, v, 82) : ''); b.style.background = 'none'; g.appendChild(b);
+      b.onclick = () => { const e = t.indexOf(0), d = Math.abs(e - i); if (v && ((d === 1 && (e / 3 | 0) === (i / 3 | 0)) || d === 3)) { t[e] = v; t[i] = 0; saveProg(); sfx.tap(); draw(); if (t.join() === '1,2,3,4,5,6,7,8,0') setTimeout(() => { closeZoom(); done(); }, 400); } }; }); };
+    draw();
+  });
+}
+function wArrows(title, key, goal, done) {
+  if (!F[key]) { let d; do { d = goal.map(() => Math.random() * 4 | 0); } while (d.join() === goal.join()); F[key] = d; saveProg(); }
+  zoom(title, body => {
+    const d = F[key], row = h('div', 'dials'); body.appendChild(row);
+    d.forEach((v, i) => { let rot = v * 90; const b = h('button', '', '↑'); b.style.cssText = 'width:62px;height:62px;border-radius:50%;background:#121016;border:2px solid #554;font-size:32px;color:var(--gold);transition:transform .2s;transform:rotate(' + rot + 'deg)';
+      b.onclick = () => { sfx.tap(); d[i] = (d[i] + 1) % 4; rot += 90; b.style.transform = 'rotate(' + rot + 'deg)'; saveProg(); if (d.join() === goal.join()) setTimeout(() => { closeZoom(); done(); }, 400); }; row.appendChild(b); });
+    body.appendChild(h('p', '', '누를 때마다 시계 방향으로 돌아요'));
+  });
+}
+function wPiano(title, n, melody, done) {
+  zoom(title, body => {
+    const freqs = [262, 294, 330, 349, 392, 440, 494, 523], kb = h('div', ''); kb.style.cssText = 'display:flex;gap:4px;background:#1b1b1b;padding:14px 10px 10px;border-radius:10px'; body.appendChild(kb);
+    let buf = [];
+    for (let i = 0; i < n; i++) { const k = h('button', ''); k.style.cssText = 'width:' + Math.floor(280 / n) + 'px;height:130px;background:linear-gradient(#fff,#e8e4dc);border-radius:0 0 6px 6px';
+      k.onclick = () => { if (save.sound) tone(freqs[i], .5, 'triangle', .2); k.style.background = '#d7cfbf'; setTimeout(() => k.style.background = 'linear-gradient(#fff,#e8e4dc)', 150); buf.push(i); buf = buf.slice(-melody.length); if (buf.join() === melody.join()) setTimeout(() => { closeZoom(); done(); }, 500); };
+      kb.appendChild(k); }
+    body.appendChild(h('p', '', '왼쪽이 낮은 소리예요'));
+  });
+}
+function wBalance(title, weights, target, count, done, targetLabel) {
+  zoom(title, body => {
+    const onP = weights.map(() => false), sc = h('div', ''); sc.style.cssText = 'position:relative;width:300px;height:170px'; body.appendChild(sc);
+    const shelf = h('div', ''); shelf.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;justify-content:center'; body.appendChild(shelf);
+    const msg = h('p', '', '추를 눌러 오른쪽 접시에 올리고 내려요'); body.appendChild(msg);
+    const chip = w => '<span style="display:inline-grid;place-items:center;min-width:' + (30 + w * 3) + 'px;height:' + (26 + w * 2) + 'px;padding:0 4px;background:#777;color:#fff;border-radius:8px 8px 4px 4px;font-weight:800;font-size:14px">' + w + 'kg</span>';
+    let tmr = 0;
+    const draw = () => {
+      let sum = 0, n = 0; weights.forEach((w, i) => { if (onP[i]) { sum += w; n++; } });
+      const a = Math.max(-14, Math.min(14, (target - sum) * -3));
+      sc.innerHTML = '<div style="position:absolute;left:146px;top:40px;width:8px;height:125px;background:#8a7a5a"></div><div style="position:absolute;left:100px;top:160px;width:100px;height:10px;background:#6b5c40;border-radius:4px"></div>' +
+        '<div style="position:absolute;left:20px;top:36px;width:260px;height:8px;background:#b9a46e;border-radius:4px;transform:rotate(' + a + 'deg);transition:transform .4s">' +
+        ['left', 'right'].map(side => '<div style="position:absolute;' + side + ':0;top:4px;width:0;height:0;transform:rotate(' + (-a) + 'deg);transition:transform .4s"><div style="position:absolute;left:-1px;width:2px;height:60px;background:#8a7a5a"></div><div style="position:absolute;left:-45px;top:60px;width:90px;height:8px;background:#b9a46e;border-radius:0 0 40px 40px"></div><div class="load-' + side + '" style="position:absolute;left:-45px;width:90px;bottom:-60px;display:flex;justify-content:center;align-items:flex-end;gap:2px;flex-wrap:wrap-reverse"></div></div>').join('') + '</div>';
+      sc.querySelector('.load-left').innerHTML = '<span style="display:inline-grid;place-items:center;width:46px;height:38px;background:#a77b4b;color:#fff;border-radius:4px;font-weight:900">' + (targetLabel || '?') + '</span>';
+      const rl = sc.querySelector('.load-right'); shelf.innerHTML = '';
+      weights.forEach((w, i) => { const b = h('button', '', chip(w)); b.onclick = () => { sfx.tap(); onP[i] = !onP[i]; draw(); }; (onP[i] ? rl : shelf).appendChild(b); });
+      clearTimeout(tmr);
+      if (sum === target) tmr = setTimeout(() => { if (!count || n === count) { closeZoom(); done(); } else msg.textContent = '수평이 됐는데… 아무 일도 일어나지 않아요.'; }, 500);
+      else msg.textContent = '추를 눌러 오른쪽 접시에 올리고 내려요';
+    };
+    draw();
+  });
+}
+function wSimon(title, len, done) {
+  zoom(title, body => {
+    const cols = ['#e05252', '#4a8be0', '#4fbf6f', '#e8c33c'], fr = [330, 392, 494, 587];
+    const grid = h('div', ''); grid.style.cssText = 'display:grid;grid-template-columns:repeat(2,100px);gap:10px'; body.appendChild(grid);
+    const st = h('p', '', '불빛이 깜빡이는 순서를 잘 봐요'); body.appendChild(st);
+    const again = h('button', 'btn ghost', '다시 보기'); body.appendChild(again);
+    let seq = [], inp = [], busy = true;
+    const pads = cols.map((c, i) => { const b = h('button', ''); b.style.cssText = 'height:100px;border-radius:18px;background:' + c + ';opacity:.35;transition:opacity .12s';
+      b.onclick = () => { if (busy) return; flash(i); inp.push(i); if (inp[inp.length - 1] !== seq[inp.length - 1]) { sfx.bad(); st.textContent = '틀렸어요. 새 순서를 보여 줄게요.'; newSeq(); } else if (inp.length === seq.length) { busy = true; setTimeout(() => { closeZoom(); done(); }, 400); } }; grid.appendChild(b); return b; });
+    function flash(i) { pads[i].style.opacity = 1; tone(fr[i], .25, 'triangle', .15); setTimeout(() => pads[i].style.opacity = .35, 280); }
+    function play() { busy = true; inp = []; seq.forEach((v, k) => setTimeout(() => flash(v), 600 + k * 520)); setTimeout(() => { busy = false; st.textContent = '이제 똑같이 눌러요'; }, 700 + seq.length * 520); }
+    function newSeq() { seq = Array.from({ length: len }, () => Math.random() * 4 | 0); setTimeout(play, 500); }
+    again.onclick = () => { if (!busy) { st.textContent = '불빛이 깜빡이는 순서를 잘 봐요'; play(); } };
+    newSeq();
   });
 }
 function clockFace(hr, mn) {
@@ -345,402 +474,719 @@ function clockFace(hr, mn) {
     '<i style="position:absolute;left:50%;top:50%;width:.12em;height:40%;background:#222;transform-origin:50% 0;transform:translateX(-50%) rotate(' + (180 + mn * 6) + 'deg)"></i>' +
     [0, 3, 6, 9].map(k => '<b style="position:absolute;left:' + (50 + 40 * Math.sin(k * Math.PI / 6)) + '%;top:' + (50 - 40 * Math.cos(k * Math.PI / 6)) + '%;width:.18em;height:.18em;background:#222;border-radius:50%;transform:translate(-50%,-50%)"></b>').join('');
 }
-const keyDoor = () => () => { if (sel === 'key') { take('key'); unlock(); } else { sfx.bad(); shake(door); toast('열쇠 구멍이 있어요.'); } };
-const paper = (inner, extra) => '<div style="background:#fff8e3;color:#3b2c1d;padding:16px 20px;border-radius:8px;font-weight:800;' + (extra || '') + '">' + inner + '</div>';
+function wClock(title, hr, mn, done) {
+  zoom(title, body => {
+    let H = 12, M = 0; const face = h('div', ''); face.style.cssText = 'position:relative;width:180px;height:180px;border-radius:50%;background:#fff8ea;border:8px solid #6b4a2e;font-size:30px'; body.appendChild(face);
+    const row = h('div', ''); row.style.cssText = 'display:flex;gap:10px'; body.appendChild(row);
+    const draw = () => face.innerHTML = clockFace(H, M);
+    const bH = h('button', 'btn ghost', '짧은 바늘 ↻'), bM = h('button', 'btn ghost', '긴 바늘 ↻'), bOk = h('button', 'btn', '확인');
+    bH.onclick = () => { sfx.tap(); H = H % 12 + 1; draw(); }; bM.onclick = () => { sfx.tap(); M = (M + 5) % 60; draw(); };
+    bOk.onclick = () => { if (H % 12 === hr % 12 && M === mn) { closeZoom(); done(); } else { sfx.bad(); shake(face); } };
+    row.append(bH, bM); body.appendChild(bOk); draw();
+  });
+}
+function wStars(title, key, goal, done) {
+  zoom(title, body => {
+    const st = F[key] || goal.map(() => 0), g = h('div', ''); g.style.cssText = 'display:grid;grid-template-columns:repeat(4,60px);gap:8px;background:#0d1626;padding:12px;border-radius:12px'; body.appendChild(g);
+    const draw = () => { g.innerHTML = ''; st.forEach((v, i) => { const b = h('button', '', '★'); b.style.cssText = 'height:60px;font-size:30px;color:' + (v ? '#ffe68a' : '#2a3550') + ';text-shadow:' + (v ? '0 0 12px #ffe68a' : 'none');
+      b.onclick = () => { sfx.tap(); st[i] ^= 1; F[key] = st; saveProg(); draw(); if (st.join() === goal.join()) setTimeout(() => { closeZoom(); done(); }, 400); }; g.appendChild(b); }); };
+    draw(); body.appendChild(h('p', '', '별을 눌러 켜고 꺼요'));
+  });
+}
+const starGrid = (goal, sz) => '<div style="display:grid;grid-template-columns:repeat(4,' + sz + 'px);gap:4px;background:#0d1626;padding:10px;border-radius:10px">' + goal.map(v => '<span style="height:' + sz + 'px;display:grid;place-items:center;font-size:' + sz * .6 + 'px;color:' + (v ? '#ffe68a' : 'transparent') + '">★</span>').join('') + '</div>';
+const staff = (notes, mark, big = true) => {
+  let s = '<div style="position:relative;width:' + (big ? '290px' : '100%') + ';height:' + (big ? '140px' : '100%') + ';background:#fff8ea;border-radius:8px">';
+  for (let i = 0; i < 5; i++) s += '<i style="position:absolute;left:4%;right:4%;top:' + (16 + i * 15) + '%;height:' + (big ? 2 : 1) + 'px;background:#555"></i>';
+  notes.forEach((n, i) => s += '<b style="position:absolute;left:' + (14 + i * (78 / Math.max(notes.length, 1))) + '%;top:' + (86 - n * 10) + '%;width:' + (big ? 20 : 8) + 'px;height:' + (big ? 14 : 6) + 'px;border-radius:50%;background:#222;transform:translateY(-50%) rotate(-20deg)"></b>');
+  return s + '<span style="position:absolute;left:3%;top:3%;font-size:' + (big ? 15 : 7) + 'px;font-weight:800;color:#a33">' + mark + '</span></div>';
+};
+/* ===================== ROOMS ===================== */
+const WOOD = 'repeating-linear-gradient(90deg,#5b3b25 0 12%,#523421 12% 24%)', STONE = 'linear-gradient(#5c544a,#4a433b)', TILE = 'repeating-conic-gradient(#d8d2c4 0 25%,#b9b2a2 0 50%) 0 0/12% 18%';
+const T4 = (w, f) => [[w, f], [w, f], [w, f], [w, f]];
+const dim = a => O(0, 0, 100, 100, '', { background: 'rgba(0,0,0,' + a + ')', pointerEvents: 'none', zIndex: 40 });
+const BOOKS = [['#d84a4a', 70], ['#9b59d0', 35], ['#4a7bd8', 48], ['#3fae6a', 90], ['#e7c33c', 60]];
+const BOOK_GOAL = [1, 2, 4, 0, 3];
+const bulbRow = goal => '<div style="display:flex;gap:12px;padding:14px;background:#fff8e3;border-radius:8px">' + goal.map(g => '<span style="width:30px;height:30px;border-radius:50%;' + (g ? 'background:radial-gradient(circle,#fffbe0,#ffc93c);box-shadow:0 0 10px #ffc93c' : 'background:#888') + '"></span>').join('') + '</div>';
+const petals = (n, c) => { let s = ''; for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2; s += '<i style="position:absolute;left:' + (50 + 30 * Math.cos(a)) + '%;top:' + (50 + 30 * Math.sin(a)) + '%;width:36%;height:36%;border-radius:50%;background:' + c + ';transform:translate(-50%,-50%)"></i>'; } return s + '<i style="position:absolute;left:50%;top:50%;width:26%;height:26%;border-radius:50%;background:#f3c623;transform:translate(-50%,-50%)"></i>'; };
+const arrowTri = d => '<span style="display:inline-block;transform:rotate(' + d * 90 + 'deg)">▲</span>';
+const lockedMsg = (m) => () => { sfx.bad(); toast(m); };
 
 const ROOMS = [
 
-/* 1. 멈춘 시계 → 서랍 → 가위 → 쿠션 → 열쇠 */
-{ name: '작은 서재', hints: ['시간이 멈춘 물건이 있어요.', '쿠션 속 딱딱한 것은 맨손으로는 꺼낼 수 없어요.'],
-  build() {
-    room('linear-gradient(#5a4a3a,#4a3c2f)', FLOOR_A);
-    makeDoor(38, 26, 24, 46, keyDoor());
-    const cl = put('obj', 8, 8, 16, 12, clockFace(7, 25), { background: '#fff8ea', borderRadius: '50%', border: '.3em solid #6b4a2e' });
-    on(cl, () => toast('시계가 멈춰 있어요.'));
-    const f = put('frame', 72, 8, 20, 18, '<span class="emo" style="font-size:2em">⛵</span>');
-    on(f, () => toast('바다 그림이에요. 뒤에는 아무것도 없어요.'));
-    const desk = put('obj', 66, 52, 30, 20, '', { background: '#6b4a2e', borderRadius: '3px', boxShadow: 'inset 0 -.3em 0 #4d331e' });
-    const drw = put('obj', 72, 56, 18, 7, '<i style="position:absolute;left:40%;right:40%;top:40%;height:20%;background:#d9b46a;border-radius:3px"></i>', { background: '#58391f', border: '1px solid #3b2512' });
-    on(desk, () => toast('낡은 책상이에요.'));
-    on(drw, () => {
-      if (flags.drawer) { toast('빈 서랍이에요.'); return; }
-      dialLock('서랍 자물쇠 (세 자리)', '725', () => { flags.drawer = 1; sfx.unlock(); give('sc', '✂️', '가위'); });
-    });
-    const sofa = put('obj', 4, 52, 28, 20, '', { background: '#7a3b3b', borderRadius: '1em 1em .3em .3em', boxShadow: 'inset 0 -.6em 0 #5e2a2a' });
-    const cush = put('obj', 10, 54, 14, 9, '', { background: '#d9b46a', borderRadius: '.6em' });
-    on(sofa, () => toast('오래된 소파예요.'));
-    on(cush, () => {
-      if (flags.cush) { toast('쿠션이 찢어져 있어요.'); return; }
-      if (sel === 'sc') { take('sc'); flags.cush = 1; cush.style.background = '#a08048'; give('key', '🔑', '열쇠'); }
-      else toast('푹신한 쿠션이에요. 안에 딱딱한 게 만져져요.');
-    });
-    const rug = put('obj', 30, 78, 40, 14, '', { background: 'repeating-linear-gradient(90deg,#a3332e 0 10%,#c9a13b 10% 14%)', borderRadius: '8px', boxShadow: '0 .2em .4em rgba(0,0,0,.4)' });
-    on(rug, () => toast('깔개 밑엔 먼지뿐이에요.'));
-  } },
-
-/* 2. 꽃병 쪽지 + 액자 크기 순서 */
-{ name: '별 그림 방', hints: ['위태로워 보이는 물건이 있어요.', '액자는 색보다 다른 것이 중요해요.'],
-  build() {
-    room('linear-gradient(#34465a,#2b3a4b)', 'linear-gradient(#5c544a,#4a433b)');
-    const frames = [['#d84a4a', 2, 4, 5, 26, 19], ['#4a7bd8', 7, 36, 8, 14, 11], ['#3fae6a', 4, 56, 6, 20, 15]];
-    frames.forEach(([c, n, x, y, w, hh]) => {
-      const f = put('frame', x, y, w, hh, '', { borderColor: c });
-      f.innerHTML = '<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:0 .05em;padding:.1em;color:#e7b52c;font-size:' + (n > 4 ? .4 : .62) + 'em;line-height:1.1">' + '★'.repeat(n) + '</div>';
-      on(f, () => toast('별이 그려진 액자예요.'));
-    });
-    const fallen = put('frame', 62, 82, 16, 10, '<div style="color:#e7b52c;font-size:.6em">★★★★★</div>', { borderColor: '#e0c341', transform: 'rotate(12deg)' });
-    on(fallen, () => toast('바닥에 떨어진 액자예요. 유리가 깨져 있어요.'));
-    makeDoor(38, 28, 24, 44, () => dialLock('세 자리 자물쇠', '742', () => unlock()));
-    put('obj', 80, 46, 12, 26, '', { background: '#6b4a2e', borderRadius: '2px' });
-    const vase = put('obj', 79, 30, 14, 16, '<span class="emo" style="font-size:2.4em">🏺</span>', { transition: 'transform .5s' });
-    on(vase, () => {
-      if (flags.vase) return; flags.vase = 1; sfx.bad();
-      vase.style.transform = 'translate(-30%,120%) rotate(-80deg)'; toast('쨍그랑! 꽃병이 넘어졌어요. 뭔가 떨어졌어요.');
-      const n = put('note', 84, 84, 10, 8, '📝', { fontSize: '1.1em' });
-      on(n, () => zoom('꽃병 속 쪽지', b => { b.innerHTML += paper('벽에 걸린 것만.<br>작은 것부터.', 'font-size:20px;line-height:1.7'); }));
-    });
-  } },
-
-/* 3. 찢어진 쪽지 두 조각 + 얽힌 스위치 5개 */
-{ name: '전구 방', hints: ['쪽지 조각이 하나뿐일까요?', '스위치 하나가 전구 하나만 켜는 건 아니에요.'],
-  build() {
-    room('linear-gradient(#2c2a33,#24222a)', 'linear-gradient(#3e3a36,#33302c)');
-    const masks = [[2], [0, 4], [3], [1], [2, 4]], goal = [1, 1, 1, 0, 1], bulbs = [0, 0, 0, 0, 0], sw = [0, 0, 0, 0, 0];
-    const bEls = [];
-    for (let i = 0; i < 5; i++) {
-      put('obj', 12.2 + i * 18, 0, .6, 5, '', { background: '#111' });
-      bEls.push(put('obj', 9 + i * 18, 4, 7, 7, '', { borderRadius: '50%', background: '#555', transition: 'all .2s' }));
-    }
-    const panel = put('obj', 66, 32, 28, 13, '', { background: '#d8d2c4', borderRadius: '6px', display: 'flex', gap: '4%', justifyContent: 'center', alignItems: 'center', boxShadow: '0 .2em .3em rgba(0,0,0,.4)' });
-    for (let i = 0; i < 5; i++) {
-      const s = h('button', '', ''); Object.assign(s.style, { width: '15%', height: '70%', background: '#f4f0e6', borderRadius: '4px', border: '1px solid #aaa', position: 'relative' });
-      s.innerHTML = '<i style="position:absolute;left:20%;right:20%;height:40%;top:8%;background:#999;border-radius:3px;transition:top .15s"></i>';
-      s.onclick = e => { e.stopPropagation(); if (unlocked) return; sfx.tap(); sw[i] ^= 1; masks[i].forEach(k => bulbs[k] ^= 1); s.firstChild.style.top = sw[i] ? '52%' : '8%'; draw(); };
-      panel.appendChild(s);
-    }
-    function draw() {
-      bEls.forEach((b, i) => { b.style.background = bulbs[i] ? 'radial-gradient(circle,#fffbe0,#ffd659)' : '#555'; b.style.boxShadow = bulbs[i] ? '0 0 1.5em .4em rgba(255,214,89,.6)' : 'none'; });
-      if (bulbs.join() === goal.join()) unlock('철컥! 어딘가 잠금이 풀렸어요.');
-    }
-    makeDoor(8, 26, 24, 46);
-    const bulb = (g) => '<span style="width:34px;height:34px;border-radius:50%;' + (g ? 'background:radial-gradient(circle,#fffbe0,#ffc93c);box-shadow:0 0 12px #ffc93c' : 'background:#888') + '"></span>';
-    const can = put('obj', 40, 60, 12, 14, '<span class="emo" style="font-size:2.2em">🗑️</span>');
-    on(can, () => zoom('휴지통 속 종이 조각', b => { b.innerHTML += '<div style="display:flex;gap:12px;padding:16px 26px 16px 16px;background:#fff8e3;clip-path:polygon(0 0,100% 0,92% 20%,100% 40%,90% 60%,100% 80%,93% 100%,0 100%)">' + goal.slice(0, 3).map(bulb).join('') + '</div>'; }));
-    const chair = put('obj', 72, 56, 16, 18, '<span class="emo" style="font-size:2.6em">🪑</span>');
-    on(chair, () => zoom('의자 밑에 붙어 있던 종이 조각', b => { b.innerHTML += '<div style="display:flex;gap:12px;padding:16px 16px 16px 26px;background:#fff8e3;clip-path:polygon(8% 0,100% 0,100% 100%,7% 100%,0 80%,10% 60%,0 40%,8% 20%)">' + goal.slice(3).map(bulb).join('') + '</div>'; }));
-  } },
-
-/* 4. 전구 끼우기 + 시 해석 + 단추 없는 색 */
-{ name: '책장 방', hints: ['버튼 판이 살아 있지 않아요.', '쪽지의 시는 순서를 말해요. 모든 책에 버튼이 있는 건 아니에요.'],
-  build() {
-    room('linear-gradient(#3d4a3a,#323e30)', FLOOR_A);
-    makeDoor(6, 26, 24, 46);
-    const shelf = put('obj', 46, 20, 48, 34, '', { background: '#5a3b22', borderRadius: '4px', boxShadow: 'inset 0 0 0 .4em #3e2815' });
-    const books = [['#d84a4a', 70], ['#9b59d0', 35], ['#4a7bd8', 48], ['#3fae6a', 90], ['#e7c33c', 60]];
-    shelf.innerHTML = '<div style="position:absolute;left:8%;right:26%;bottom:8%;top:8%;display:flex;gap:5%;align-items:flex-end">' +
-      books.map(([c, hh]) => '<i style="flex:1;height:' + hh + '%;background:' + c + ';border-radius:2px;box-shadow:inset -.2em 0 rgba(0,0,0,.2)"></i>').join('') + '</div>';
-    on(shelf, () => toast('색색의 책이 꽂혀 있어요.'));
-    const note = put('note', 79, 36, 12, 10, '📜', { fontSize: '1.2em' });
-    on(note, () => zoom('책장의 쪽지', b => { b.innerHTML += paper('가장 낮은 곳에서 시작해<br>하늘에 닿을 때까지', 'font-size:19px;line-height:1.7'); }));
-    const lamp = put('obj', 34, 30, 8, 8, '', { borderRadius: '50%', background: '#333', border: '.2em dashed #777' });
-    on(lamp, () => {
-      if (flags.pw) { toast('전구가 환하게 켜져 있어요.'); return; }
-      if (sel === 'bulb') { take('bulb'); flags.pw = 1; sfx.unlock(); lamp.style.background = 'radial-gradient(circle,#fffbe0,#ffd659)'; lamp.style.boxShadow = '0 0 1em #ffd659'; lamp.style.border = '0'; pad.style.opacity = 1; toast('불이 들어오자 버튼 판이 깨어났어요.'); }
-      else toast('전구 소켓이 비어 있어요.');
-    });
-    const goal = ['#4a7bd8', '#e7c33c', '#d84a4a', '#3fae6a']; let seq = [];
-    const pad = put('obj', 32, 42, 10, 22, '', { background: '#222', borderRadius: '6px', display: 'flex', flexDirection: 'column', justifyContent: 'space-around', alignItems: 'center', opacity: .45 });
-    ['#3fae6a', '#e7c33c', '#d84a4a', '#4a7bd8'].forEach(c => {
-      const b = h('button', '', ''); Object.assign(b.style, { width: '1.5em', height: '1.5em', flex: 'none', background: c, borderRadius: '50%', boxShadow: 'inset 0 -.15em rgba(0,0,0,.3)' });
-      b.onclick = e => {
-        e.stopPropagation(); if (unlocked) return;
-        if (!flags.pw) { toast('눌러도 아무 반응이 없어요.'); return; }
-        tone(300 + goal.indexOf(c) * 120, .12, 'triangle');
-        seq.push(c); if (!seq.every((s, i) => s === goal[i])) { seq = []; sfx.bad(); shake(pad); toast('삐-'); }
-        else if (seq.length === 4) unlock();
-      };
-      pad.appendChild(b);
-    });
-    const sofa = put('obj', 62, 58, 30, 16, '<span class="emo" style="font-size:2.8em">🛋️</span>');
-    on(sofa, () => { if (!flags.sofa) { flags.sofa = 1; toast('소파 틈에 뭔가 끼어 있어요…'); setTimeout(() => give('bulb', '💡', '전구'), 600); } else toast('푹신한 소파예요.'); });
-  } },
-
-/* 5. 페인트통 → 공구함 → 드라이버 → 환풍구 / 자석+실 → 열쇠 */
-{ name: '창고', hints: ['통에 적힌 글자는 한쪽 면만 보여요.', '손이 닿지 않으면 두 물건을 합쳐 봐요. 아이템 하나를 고른 채로 다른 아이템을 눌러요.'],
-  combos: { 'mag+str': ['rod', '🎣', '자석 낚싯줄'] },
-  build() {
-    room('linear-gradient(#4b4b4b,#3c3c3c)', 'linear-gradient(#5a5650,#4b4843)');
-    makeDoor(38, 26, 24, 46, keyDoor());
-    const vent = put('obj', 70, 10, 22, 16, '', { background: 'repeating-linear-gradient(#999 0 12%,#666 12% 22%)', border: '.3em solid #888', borderRadius: '4px' });
-    on(vent, () => {
-      if (flags.got) { toast('텅 빈 환풍구예요.'); return; }
-      if (!flags.vent) {
-        if (sel === 'drv') { take('drv'); flags.vent = 1; sfx.tap(); vent.style.background = '#111'; toast('환풍구 뚜껑을 열었어요. 깊숙한 곳에 열쇠가 보여요.'); }
-        else toast('나사로 꽉 조여 있어요.');
-        return;
-      }
-      if (sel === 'rod') { take('rod'); flags.got = 1; give('key', '🔑', '열쇠'); }
-      else toast('열쇠가 너무 깊이 있어서 손이 닿지 않아요.');
-    });
-    const sides = ['<b style="font-size:.5em">PAINT</b>', '<b style="font-size:.9em">★</b>', '<b style="font-size:.55em;letter-spacing:.05em">4186</b>'];
-    const can = put('obj', 6, 60, 12, 12, sides[0], { background: 'linear-gradient(90deg,#3a6fa8,#5b8fd0,#3a6fa8)', borderRadius: '.3em', color: '#fff' });
-    on(can, () => { flags.can = ((flags.can || 0) + 1) % 3; can.innerHTML = sides[flags.can]; sfx.tap(); });
-    const tb = put('obj', 22, 62, 14, 10, '', { background: '#c0392b', borderRadius: '.3em', boxShadow: 'inset 0 .4em 0 #962d22' });
-    on(tb, () => { if (flags.tb) { toast('빈 공구함이에요.'); return; } keypad(4, '4186', () => { flags.tb = 1; sfx.unlock(); give('drv', '🪛', '드라이버'); }); });
-    const box = put('obj', 68, 56, 26, 18, '<div style="position:absolute;left:45%;top:0;bottom:0;width:10%;background:#d9c08a"></div>', { background: '#a77b4b', borderRadius: '3px', boxShadow: 'inset 0 0 0 .2em #7d5732' });
-    on(box, () => { if (!flags.mag) { flags.mag = 1; give('mag', '🧲', '자석'); } else toast('빈 상자예요.'); });
-    put('obj', 4, 34, 30, 2.5, '', { background: '#6b4a2e' });
-    const str = put('obj', 22, 26, 9, 8, '<span class="emo" style="font-size:1.5em">🧵</span>');
-    on(str, () => { if (!flags.str) { flags.str = 1; str.remove(); give('str', '🧵', '실타래'); } });
-    const pot = put('obj', 6, 22, 12, 12, '<span class="emo" style="font-size:1.8em">🪴</span>');
-    on(pot, () => toast('시든 화분이에요.'));
-  } },
-
-/* 6. 그림 슬라이드 퍼즐 */
-{ name: '타일 문', hints: ['벽의 작은 사진을 잘 봐 두세요.', '오른쪽 아래 칸이 비어야 완성이에요.'],
-  build() {
-    room('linear-gradient(#5a3b3b,#4a3030)', 'linear-gradient(#3d3434,#302828)');
-    const pic = 'radial-gradient(circle at 72% 24%,#ffd659 0 9%,transparent 9.5%),' +
-      'linear-gradient(150deg,transparent 52%,#2e7d4f 52.5% 70%,transparent 70.5%),' +
-      'linear-gradient(210deg,transparent 58%,#1f5a39 58.5%),' +
-      'radial-gradient(ellipse at 25% 35%,#fff 0 6%,transparent 6.5%),' +
-      'radial-gradient(ellipse at 32% 33%,#fff 0 6%,transparent 6.5%),' +
-      'linear-gradient(#5aa9e6,#f7c59f)';
-    const piece = (k, sz) => { const r = (k - 1) / 3 | 0, c = (k - 1) % 3; return '<div style="width:' + sz + 'px;height:' + sz + 'px;border-radius:8px;background:' + pic + ';background-size:' + sz * 3 + 'px ' + sz * 3 + 'px;background-position:-' + c * sz + 'px -' + r * sz + 'px;position:relative;overflow:hidden"><b style="position:absolute;left:' + (-c * sz) + 'px;top:' + (-r * sz) + 'px;width:' + sz * 3 + 'px;height:' + sz * 3 + 'px;display:grid;place-items:end center;padding-bottom:' + sz * .35 + 'px;font-size:' + sz * .62 + 'px;color:rgba(255,255,255,.85);text-shadow:0 2px 6px rgba(0,0,0,.4);letter-spacing:.1em">탈출</b></div>'; };
-    let t = [1, 2, 3, 4, 5, 6, 7, 8, 0], last = -1;
-    do {
-      for (let n = 0; n < 120; n++) {
-        const e = t.indexOf(0), r = e / 3 | 0, c = e % 3, nb = [];
-        if (r > 0) nb.push(e - 3); if (r < 2) nb.push(e + 3); if (c > 0) nb.push(e - 1); if (c < 2) nb.push(e + 1);
-        const opts = nb.filter(x => x !== last), m = opts[Math.random() * opts.length | 0]; last = e; t[e] = t[m]; t[m] = 0;
-      }
-    } while (t.slice(0, 8).filter((v, i) => v === i + 1).length > 2);
-    makeDoor(38, 26, 24, 46, () => zoom('그림 조각 퍼즐', body => {
-      const g = h('div', 'slide'); body.appendChild(g);
-      const draw = () => {
-        g.innerHTML = '';
-        t.forEach((v, i) => {
-          const b = h('button', 'tile' + (v ? '' : ' empty'), v ? piece(v, 82) : ''); b.style.background = 'none'; g.appendChild(b);
-          b.onclick = () => {
-            const e = t.indexOf(0), d = Math.abs(e - i);
-            if (v && ((d === 1 && (e / 3 | 0) === (i / 3 | 0)) || d === 3)) { t[e] = v; t[i] = 0; sfx.tap(); draw();
-              if (t.join() === '1,2,3,4,5,6,7,8,0') setTimeout(() => { closeZoom(); unlock(); }, 400); }
-          };
-        });
-      };
-      draw();
-    }));
-    const ph = put('frame', 76, 10, 16, 14, '', { borderWidth: '.25em', background: pic, padding: 0 });
-    on(ph, () => zoom('벽에 걸린 사진', b => { const d = h('div', '', ''); d.style.cssText = 'display:grid;grid-template-columns:repeat(3,70px);gap:0'; for (let k = 1; k <= 9; k++) d.innerHTML += k < 9 ? piece(k, 70).replace('border-radius:8px', 'border-radius:0') : '<div style="width:70px;height:70px;background:#121016"></div>'; b.appendChild(d); }));
-    const cl = put('obj', 8, 14, 16, 16, '<span class="emo" style="font-size:2.4em">🕰️</span>');
-    on(cl, () => toast('똑딱똑딱… 시계는 잘 가고 있어요.'));
-    const ch = put('obj', 72, 54, 20, 20, '<span class="emo" style="font-size:2.6em">🪑</span>');
-    on(ch, () => toast('평범한 의자예요.'));
-  } },
-
-/* 7. 어둠: 손전등 + 건전지 조합, 붉은 숫자만 */
-{ name: '어두운 방', hints: ['어둠 속에서 빛나는 것이 하나만은 아니에요.', '벽의 숫자가 모두 같은 색은 아니에요.'],
-  combos: { 'bat+fl0': ['fl', '🔦', '손전등'] },
-  build() {
-    room('linear-gradient(#3e4a5a,#334050)', 'linear-gradient(#4a4440,#3c3733)');
-    [['5', 4, 14, 1], ['2', 18, 40, 0], ['0', 30, 6, 1], ['7', 64, 18, 0], ['3', 70, 40, 1], ['9', 82, 6, 0], ['8', 90, 30, 1]].forEach(([n, x, y, red]) =>
-      put('obj', x, y, 7, 7, n, { color: red ? '#ff6b5e' : '#e8f7ff', fontSize: '1.6em', fontWeight: 900 }));
-    put('obj', 6, 62, 30, 6, '붉은 것만, 왼쪽부터', { color: '#ffdfa8', fontSize: '.8em', fontWeight: 800, fontStyle: 'italic' });
-    makeDoor(38, 26, 24, 46, () => keypad(4, '5038', () => unlock()));
-    put('obj', 66, 58, 30, 16, '', { background: '#6b4a2e', borderRadius: '3px' });
-    const drawer = put('obj', 74, 62, 14, 7, '<i style="position:absolute;left:35%;right:35%;top:40%;height:20%;background:#9ff;border-radius:3px;box-shadow:0 0 .6em #9ff"></i>', { background: '#58391f', border: '1px solid #3b2512', zIndex: 60 });
-    on(drawer, () => { if (!flags.fl0) { flags.fl0 = 1; give('fl0', '🔦', '손전등 (건전지 없음)'); } else toast('빈 서랍이에요.'); });
-    put('obj', 4, 74, 30, 14, '', { background: '#4a3a5a', borderRadius: '.8em .8em .2em .2em' });
-    const remote = put('obj', 16, 76, 8, 5, '<i style="position:absolute;right:15%;top:30%;width:.35em;height:.35em;border-radius:50%;background:#f44;box-shadow:0 0 .5em #f44"></i>', { background: '#222', borderRadius: '.3em', zIndex: 60 });
-    on(remote, () => { if (!flags.bat) { flags.bat = 1; give('bat', '🔋', '건전지'); toast('리모컨에서 건전지를 뺐어요.'); } else toast('건전지가 빠진 리모컨이에요.'); });
-    const dark = put('obj', 0, 0, 100, 100, '', { background: '#000', pointerEvents: 'none', zIndex: 50 });
-    function light(x, y) { dark.style.background = 'radial-gradient(circle at ' + x + 'px ' + y + 'px, transparent 0, transparent 3em, #000 5em)'; }
-    function pos(e) { const r = stage.getBoundingClientRect(); const p = e.touches ? e.touches[0] : e; return [p.clientX - r.left, p.clientY - r.top]; }
-    scene.addEventListener('click', e => {
-      if (flags.on) return;
-      if (sel === 'fl') { flags.on = 1; sfx.tap(); toast('불이 켜졌어요. 화면을 누르거나 끌어서 비춰 봐요.'); light(...pos(e)); }
-      else if (sel === 'fl0') toast('딸깍… 켜지지 않아요.');
-    });
-    const mv = e => { if (flags.on) light(...pos(e)); };
-    scene.addEventListener('pointerdown', mv); scene.addEventListener('pointermove', mv);
-    scene.addEventListener('touchmove', mv, { passive: true });
-  } },
-
-/* 8. 두 장의 악보, 건반 7개, 8음 */
-{ name: '음악실', hints: ['악보가 한 장이 아니에요.', '건반은 왼쪽이 낮은 소리예요.'],
-  build() {
-    room('linear-gradient(#5a2e45,#4a2538)', FLOOR_A);
-    makeDoor(6, 26, 22, 46);
-    const melody = [4, 2, 2, 3, 1, 1, 0, 5];
-    const staff = (notes, big, mark) => {
-      let s = '<div style="position:relative;width:100%;height:100%">';
-      for (let i = 0; i < 5; i++) s += '<i style="position:absolute;left:4%;right:4%;top:' + (14 + i * 16) + '%;height:' + (big ? 2 : 1) + 'px;background:#555"></i>';
-      notes.forEach((n, i) => s += '<b style="position:absolute;left:' + (16 + i * 20) + '%;top:' + (84 - n * 11) + '%;width:' + (big ? 22 : 9) + 'px;height:' + (big ? 16 : 6) + 'px;border-radius:50%;background:#222;transform:translateY(-50%) rotate(-20deg)"></b>');
-      return s + '<span style="position:absolute;left:4%;top:2%;font-size:' + (big ? 16 : 8) + 'px;font-weight:800;color:#a33">' + mark + '</span></div>';
-    };
-    const sheet = put('obj', 36, 8, 34, 18, staff(melody.slice(0, 4), false, '1'), { background: '#fff8ea', borderRadius: '4px', boxShadow: '0 .2em .4em rgba(0,0,0,.4)' });
-    on(sheet, () => zoom('벽에 붙은 악보', b => { const d = h('div', '', staff(melody.slice(0, 4), true, '1')); Object.assign(d.style, { width: '100%', height: '150px', background: '#fff8ea', borderRadius: '8px' }); b.appendChild(d); }));
-    const piano = put('obj', 34, 44, 62, 26, '', { background: '#1b1b1b', borderRadius: '6px 6px 2px 2px', padding: '5% 3% 0', display: 'flex', gap: '1.5%', alignItems: 'stretch' });
-    const freqs = [262, 294, 330, 349, 392, 440, 494]; let buf = [];
-    freqs.forEach((f, i) => {
-      const k = h('button', '', ''); Object.assign(k.style, { flex: 1, background: 'linear-gradient(#fff,#e8e4dc)', borderRadius: '0 0 4px 4px', marginBottom: '8%' });
-      k.onclick = e => {
-        e.stopPropagation(); if (save.sound) tone(f, .5, 'triangle', .2); else sfx.tap();
-        k.style.background = '#d7cfbf'; setTimeout(() => k.style.background = 'linear-gradient(#fff,#e8e4dc)', 150);
-        buf.push(i); buf = buf.slice(-8); if (buf.join() === melody.join()) unlock('아름다운 소리! 철컥, 문이 열렸어요.');
-      };
-      piano.appendChild(k);
-    });
-    const bench = put('obj', 50, 76, 30, 8, '', { background: '#4a2e1c', borderRadius: '.3em', boxShadow: 'inset 0 .3em 0 #6b4a2e' });
-    on(bench, () => zoom(flags.bench ? '의자 속 악보' : '피아노 의자 뚜껑을 열었어요', b => { flags.bench = 1; const d = h('div', '', staff(melody.slice(4), true, '2')); Object.assign(d.style, { width: '100%', height: '150px', background: '#fff8ea', borderRadius: '8px' }); b.appendChild(d); }));
-    const mt = put('obj', 6, 76, 14, 12, '<span class="emo" style="font-size:2em">🎻</span>');
-    on(mt, () => toast('줄이 끊어진 바이올린이에요.'));
-  } },
-
-/* 9. 버려진 송장 + 추 세 개만 */
-{ name: '저울 방', hints: ['상자 무게를 알려주는 종이가 어딘가 버려져 있어요.', '벽에 붙은 규칙을 지켜야 해요.'],
-  build() {
-    room('linear-gradient(#4a4230,#3c3527)', 'linear-gradient(#5c5248,#4b433b)');
-    makeDoor(70, 26, 24, 46);
-    put('obj', 6, 14, 60, 3, '', { background: '#6b4a2e', borderRadius: '2px' });
-    const rule = put('note', 72, 10, 18, 10, '추는<br>세 개만', { fontSize: '.7em', lineHeight: 1.3, textAlign: 'center' });
-    on(rule, () => toast('"추는 세 개만" 이라고 적혀 있어요.'));
-    const ws = [1, 3, 4, 6, 7], onPan = ws.map(() => false), BOX = 11;
-    put('obj', 37, 34, 2, 36, '', { background: '#8a7a5a' });
-    put('obj', 29, 69, 18, 3, '', { background: '#6b5c40', borderRadius: '3px' });
-    const beam = put('obj', 16, 33, 44, 2.2, '', { background: '#b9a46e', borderRadius: '4px', transition: 'transform .4s', transformOrigin: '50% 50%' });
-    function pan(side) {
-      const hg = h('div', ''); Object.assign(hg.style, { position: 'absolute', top: '50%', [side]: '0', width: '0', height: '0', transition: 'transform .4s' });
-      hg.innerHTML = '<div style="position:absolute;left:-.05em;top:0;width:.1em;height:5em;background:#8a7a5a"></div><div style="position:absolute;left:-3em;top:5em;width:6em;height:.5em;background:#b9a46e;border-radius:0 0 3em 3em"></div><div class="load" style="position:absolute;left:-3em;width:6em;bottom:-5em;display:flex;justify-content:center;align-items:flex-end;gap:.15em;flex-wrap:wrap-reverse"></div>';
-      beam.appendChild(hg); return hg;
-    }
-    const L = pan('left'), Rp = pan('right');
-    const chip = w => '<span style="display:inline-grid;place-items:center;min-width:' + (1.1 + w * .12) + 'em;height:' + (1 + w * .1) + 'em;padding:0 .2em;background:#777;color:#fff;border-radius:.3em .3em .15em .15em;font-size:.75em;font-weight:800">' + w + 'kg</span>';
-    L.querySelector('.load').innerHTML = '<span style="display:inline-grid;place-items:center;width:2.4em;height:2em;background:#a77b4b;color:#fff;border-radius:.2em;font-weight:900">?</span>';
-    const sEls = ws.map((w, i) => {
-      const b = h('button', '', chip(w)); Object.assign(b.style, { position: 'absolute', left: (8 + i * 11.5) + '%', top: '7%', fontSize: '1em' });
-      b.onclick = e => { e.stopPropagation(); if (unlocked) return; onPan[i] = !onPan[i]; sfx.tap(); draw(); };
-      scene.appendChild(b); return b;
-    });
-    let tmr = 0;
-    function draw() {
-      const load = Rp.querySelector('.load'); load.innerHTML = '';
-      let sum = 0, n = 0;
-      ws.forEach((w, i) => { sEls[i].style.visibility = onPan[i] ? 'hidden' : 'visible'; if (onPan[i]) { sum += w; n++; const s = h('span', '', chip(w)); s.style.cursor = 'pointer'; s.onclick = e => { e.stopPropagation(); if (unlocked) return; onPan[i] = false; sfx.tap(); draw(); }; load.appendChild(s); } });
-      const a = Math.max(-14, Math.min(14, (BOX - sum) * -2.5));
-      beam.style.transform = 'rotate(' + a + 'deg)'; L.style.transform = Rp.style.transform = 'rotate(' + (-a) + 'deg)';
-      clearTimeout(tmr);
-      if (sum === BOX) tmr = setTimeout(() => { if (n === 3) unlock('저울이 수평이 되자 철컥 소리가 났어요!'); else toast('수평이 됐는데… 아무 일도 일어나지 않아요.'); }, 450);
-    }
-    draw();
-    const bin = put('obj', 44, 76, 12, 14, '<span class="emo" style="font-size:2.2em">🗑️</span>');
-    on(bin, () => zoom('구겨진 송장', b => { b.innerHTML += paper('<div style="font-size:13px;color:#8a7a5a">택배 송장</div>내용물: 상자 1개<br>무게: <span style="font-size:28px">11kg</span>', 'font-size:18px;line-height:1.7;transform:rotate(-3deg)'); }));
-  } },
-
-/* 10. 4x4 불 켜기 */
-{ name: '빛의 문', hints: ['같은 칸을 두 번 누르면 제자리로 돌아와요.', '윗줄의 꺼진 칸은 바로 아래 칸을 눌러서 켤 수 있어요. 위에서부터 차례로 내려가 봐요.'],
-  build() {
-    room('linear-gradient(#22324a,#1b283c)', 'linear-gradient(#2c2c36,#24242c)');
-    const N = 4; let g;
-    const press = (arr, i) => { const r = i / N | 0, c = i % N; [[0,0],[1,0],[-1,0],[0,1],[0,-1]].forEach(([dr, dc]) => { const R = r + dr, C = c + dc; if (R >= 0 && R < N && C >= 0 && C < N) arr[R * N + C] ^= 1; }); };
-    do { g = Array(N * N).fill(1); const ps = new Set(); while (ps.size < 6) ps.add(Math.random() * N * N | 0); ps.forEach(i => press(g, i)); } while (g.filter(x => !x).length < 5);
-    makeDoor(38, 26, 24, 46, () => zoom('열여섯 칸을 모두 켜요', body => {
-      const box = h('div', 'lo'); box.style.gridTemplateColumns = 'repeat(4,66px)'; body.appendChild(box);
-      const draw = () => { box.innerHTML = ''; g.forEach((v, i) => { const b = h('button', v ? 'on' : ''); b.style.height = '66px'; b.onclick = () => { press(g, i); tone(400 + i * 25, .08, 'triangle'); draw(); if (g.every(x => x)) setTimeout(() => { closeZoom(); unlock(); }, 400); }; box.appendChild(b); }); };
-      draw();
-    }));
-    put('obj', 41, 32, 18, 16, '', { background: 'repeating-conic-gradient(#ffd659 0 25%,#4a4a2a 0 50%) 0 0/25% 25%', opacity: .5, pointerEvents: 'none', borderRadius: '3px' });
-    const moon = put('obj', 76, 8, 16, 14, '<span class="emo" style="font-size:2.2em">🌙</span>', { background: '#0d1626', borderRadius: '6px', border: '.25em solid #556' });
-    on(moon, () => toast('창밖에 달이 떠 있어요.'));
-  } },
-
-/* 11. 손가락 그림 + 뒷면 숫자 순서 */
-{ name: '바람의 방', hints: ['그림의 앞면만 보지 마세요.', '꼭 왼쪽부터 읽는 건 아니에요.'],
-  build() {
-    room('linear-gradient(#2f4d4a,#263e3c)', FLOOR_A);
-    const pics = [['☝️', 'Ⅲ'], ['👉', 'Ⅰ'], ['👇', 'Ⅳ'], ['👈', 'Ⅱ']], goal = [1, 3, 0, 2];
-    pics.forEach(([p, num], i) => {
-      const f = put('frame', 5 + i * 23.5, 6, 19, 15, '<span class="emo" style="font-size:2em">' + p + '</span>');
-      on(f, () => zoom('액자를 살짝 뒤집어 봤어요', b => { b.innerHTML += '<div style="width:140px;height:110px;background:#8b5e34;border-radius:6px;display:grid;place-items:center;font-size:48px;color:#f2e7d0;font-family:serif">' + num + '</div>'; }));
-    });
-    let d; do { d = [0, 0, 0, 0].map(() => Math.random() * 4 | 0); } while (d.join() === goal.join());
-    makeDoor(38, 28, 24, 44, () => zoom('화살표 다이얼', body => {
-      const row = h('div', 'dials'); body.appendChild(row);
-      d.forEach((v, i) => {
-        let rot = v * 90;
-        const b = h('button', '', '↑'); Object.assign(b.style, { width: '62px', height: '62px', borderRadius: '50%', background: '#121016', border: '2px solid #554', fontSize: '32px', color: 'var(--gold)', transition: 'transform .2s', transform: 'rotate(' + rot + 'deg)' });
-        b.onclick = () => { sfx.tap(); d[i] = (d[i] + 1) % 4; rot += 90; b.style.transform = 'rotate(' + rot + 'deg)'; if (d.join() === goal.join()) setTimeout(() => { closeZoom(); unlock(); }, 400); };
-        row.appendChild(b);
+/* ---------- 1. 낡은 서재 ---------- */
+{ name: '낡은 서재', theme: T4('linear-gradient(#5a4a3a,#4a3c2f)', WOOD),
+  hints: ['멈춰 버린 것이 숫자를 알려 줘요.', '쿠션 속 딱딱한 것은 맨손으로 꺼낼 수 없어요.', '어둠 속 긁힌 자국은 빛이 있어야 보여요.', '열쇠는 두 조각이에요. 한 조각은 그림 뒤 장치, 한 조각은 책장이 지키고 있어요.'],
+  combos: { 'bat+fl0': 'fl', 'kA+kB': 'key' },
+  views: [
+    () => { // 정면: 문, 책장, 금고
+      makeDoor(() => { if (has('key')) { take('key'); unlockDoor(); } else { sfx.bad(); shake(door); toast('열쇠 구멍이 있어요.'); } });
+      const sh = O(68, 22, 24, 50, '', { background: '#5a3b22', borderRadius: '4px', boxShadow: 'inset 0 0 0 .35em #3e2815' }, () => {
+        if (F.books) { toast('책장 비밀 칸은 비어 있어요.'); return; }
+        wSeq('책을 차례로 눌러요', BOOKS.map(b => b[0]), BOOK_GOAL, () => { solved('books', '덜컥! 책장 아래 비밀 칸이 열렸어요.'); give('kB'); }, i => '<i style="display:block;width:30px;height:' + BOOKS[i][1] * .6 + 'px;background:' + BOOKS[i][0] + ';margin:auto auto 6px;border-radius:2px"></i>');
       });
-    }));
-    const vane = put('obj', 74, 52, 18, 20, '<span class="emo" style="font-size:2.6em">🎐</span>');
-    on(vane, () => toast('바람 종이 딸랑딸랑 울려요.'));
-  } },
+      sh.innerHTML = '<div style="position:absolute;left:10%;right:10%;top:8%;height:40%;display:flex;gap:6%;align-items:flex-end">' + BOOKS.map(([c, hh]) => '<i style="flex:1;height:' + hh + '%;background:' + c + '"></i>').join('') + '</div><div style="position:absolute;left:10%;right:10%;top:55%;height:3%;background:#3e2815"></div>';
+      const safe = O(10, 34, 18, 16, '<i style="position:absolute;left:60%;top:30%;width:1em;height:1em;border-radius:50%;border:.18em solid #aaa"></i>', { background: 'linear-gradient(#555,#3a3a3a)', borderRadius: '.3em', boxShadow: 'inset 0 0 0 .2em #2a2a2a' }, () => {
+        if (F.safe) { toast('빈 금고예요.'); return; }
+        wKeypad('벽 금고', '2581', () => { solved('safe'); give('drv'); });
+      });
+    },
+    () => { // 오른쪽: 책상, 시계, 어두운 틈
+      O(40, 8, 18, 13, clockFace(3, 40), { background: '#fff8ea', borderRadius: '50%', border: '.3em solid #6b4a2e' }, () => toast('시계가 멈춰 있어요.'));
+      O(20, 50, 60, 6, '', { background: '#6b4a2e', borderRadius: '3px' });
+      O(22, 56, 4, 16, '', { background: '#5a3b22' }); O(74, 56, 4, 16, '', { background: '#5a3b22' });
+      O(50, 56.5, 22, 7, '<i style="position:absolute;left:40%;right:40%;top:40%;height:20%;background:#d9b46a;border-radius:3px"></i>', { background: '#58391f', border: '1px solid #3b2512' }, () => {
+        if (F.drawer) { toast('빈 서랍이에요.'); return; }
+        wDial('서랍 자물쇠 (세 자리)', '340', () => { solved('drawer'); give('sc'); });
+      });
+      const spot = O(28, 64, 20, 8, F.scratch ? '<b style="color:#d9c9a8;font-size:.9em;letter-spacing:.2em">2581</b>' : '', { background: F.scratch ? '#2a1e14' : '#0c0806', borderRadius: '.3em', display: 'grid', placeItems: 'center' }, () => {
+        if (F.scratch) { look('책상 밑 바닥', paper('<span style="font-size:34px;letter-spacing:8px">2 5 8 1</span><br><span style="font-size:13px">누군가 긁어 놓은 숫자</span>')); return; }
+        if (has('fl')) { solved('scratch', '손전등으로 비추자 긁힌 숫자가 보여요!'); }
+        else toast('책상 밑이 너무 어두워서 안 보여요.');
+      });
+      EM(30, 40, 10, 10, '🖋️', 1.6, () => toast('잉크가 말라 버린 펜이에요.'));
+    },
+    () => { // 뒤: 소파, 쿠션, 리모컨, 창문
+      O(30, 8, 40, 30, '<div style="position:absolute;inset:0;display:grid;place-items:center;color:rgba(255,255,255,.75);font-weight:800;font-size:.75em;text-align:center;line-height:1.6">가장 낮은 곳에서<br>하늘까지</div>', { background: 'linear-gradient(#b8d4e8,#e8f0f5)', border: '.35em solid #6b4a2e', borderRadius: '4px', boxShadow: 'inset 0 0 1.5em rgba(255,255,255,.8)' }, () => toast('성에 낀 창문에 누군가 손가락으로 글씨를 써 놓았어요.'));
+      O(14, 50, 52, 22, '', { background: '#7a3b3b', borderRadius: '1em 1em .3em .3em', boxShadow: 'inset 0 -.6em 0 #5e2a2a' }, () => toast('오래된 소파예요.'));
+      O(22, 52, 16, 9, '', { background: F.cush ? '#a08048' : '#d9b46a', borderRadius: '.6em' }, () => {
+        if (F.cush) { toast('쿠션이 찢어져 있어요.'); return; }
+        if (has('sc')) { take('sc'); solved('cush'); give('skey'); } else toast('푹신한 쿠션이에요. 안에 딱딱한 게 만져져요.');
+      });
+      O(72, 56, 16, 16, '', { background: '#6b4a2e', borderRadius: '3px' });
+      if (!F.bat) O(76, 52, 8, 4, '', { background: '#222', borderRadius: '.3em' }, () => { F.bat = 1; give('bat'); toast('리모컨에서 건전지를 뺐어요.'); render(); });
+    },
+    () => { // 왼쪽: 장식장, 그림
+      O(14, 30, 28, 42, F.cab ? '<div style="position:absolute;inset:8%;background:#1f140c"></div>' : '<i style="position:absolute;right:12%;top:45%;width:.5em;height:.5em;border-radius:50%;background:#d9b46a"></i>', { background: '#6b4a2e', borderRadius: '4px', boxShadow: 'inset 0 0 0 .3em #4d331e' }, () => {
+        if (F.cab) { look('장식장 속 엽서', '<p>샹들리에 그림이 그려진 엽서예요.</p>' + bulbRow([1, 0, 1, 1])); return; }
+        if (has('skey')) { take('skey'); solved('cab', '장식장이 열렸어요.'); give('fl0'); } else toast('작은 자물쇠가 달려 있어요.');
+      });
+      const pt = O(52, 10, 34, 26, F.paint ? '<div style="position:absolute;inset:8%;background:#3a3a3a;display:grid;place-items:center;color:#aaa;font-size:.6em">스위치 4개</div>' : '<span class="emo" style="font-size:2.4em">🌄</span>', { background: '#f2e7d0', border: '.4em solid #8b5e34' }, () => {
+        if (!F.paint) { if (has('drv')) { take('drv'); solved('paint', '나사를 풀고 그림을 떼어 냈어요. 뒤에 스위치 판이 있어요!'); } else toast('그림이 나사로 단단히 고정돼 있어요.'); return; }
+        if (F.sw) { toast('스위치 판 아래 칸은 비어 있어요.'); return; }
+        wSwitch('그림 뒤 스위치 판', 'swst', [[1], [0, 2], [3], [2]], [1, 0, 1, 1], () => { solved('sw', '딸깍! 스위치 판 아래 칸이 열렸어요.'); give('kA'); });
+      });
+      EM(56, 56, 22, 16, '🪴', 2.6, () => toast('화분이에요. 흙만 있어요.'));
+    },
+  ] },
 
-/* 12. 지나온 방의 기억 → 금고 → 톱니바퀴 → 문 */
-{ name: '마지막 방', hints: ['지나온 방들을 떠올려 보세요. 방 고르기에서 다시 가 볼 수도 있어요.', '금고에서 나온 것은 문 근처에 쓰여요.'],
-  build() {
-    room('linear-gradient(#4a3a52,#3c2f44)', FLOOR_A);
-    makeDoor(38, 26, 24, 46, () => { sfx.bad(); shake(door); toast('문 옆 장치가 헛돌아요.'); });
-    const mech = put('obj', 63, 40, 9, 10, '', { background: '#333', borderRadius: '.3em', border: '.15em solid #777' });
-    mech.innerHTML = '<span style="position:absolute;inset:0;display:grid;place-items:center;font-size:1.2em;opacity:.25">⚙️</span>';
-    on(mech, () => {
-      if (flags.gear) return;
-      if (sel === 'gear') { take('gear'); flags.gear = 1; mech.firstChild.style.opacity = 1; unlock('톱니바퀴가 맞물려 돌아가요. 마지막 문이 열렸어요!'); }
-      else toast('톱니바퀴 하나가 빠진 자리가 있어요.');
-    });
-    const note = put('note', 8, 12, 24, 22, '📜', { fontSize: '1.4em' });
-    on(note, () => zoom('벽에 붙은 편지', b => { b.innerHTML += paper('지나온 길을 기억하나요?<br><br>① 첫 방 시계의 짧은 바늘<br>② 별 그림 방 자물쇠의 가운데<br>③ 어둠 속 첫 번째 붉은 숫자<br>④ 버려진 송장, 무게의 첫 자리', 'font-size:15px;line-height:1.7;text-align:left'); }));
-    const safe = put('obj', 70, 54, 24, 20, '<i style="position:absolute;left:62%;top:35%;width:1.2em;height:1.2em;border-radius:50%;border:.2em solid #aaa"></i>', { background: 'linear-gradient(#555,#3a3a3a)', borderRadius: '.4em', boxShadow: 'inset 0 0 0 .25em #2a2a2a' });
-    on(safe, () => { if (flags.safe) { toast('빈 금고예요.'); return; } keypad(4, '7451', () => { flags.safe = 1; sfx.unlock(); give('gear', '⚙️', '톱니바퀴'); }); });
-    const cup = put('obj', 10, 60, 10, 10, '<span class="emo" style="font-size:1.8em">☕</span>');
-    on(cup, () => toast('식은 커피예요.'));
-    const cal = put('obj', 76, 10, 16, 18, '<div style="background:#d84a4a;color:#fff;font-size:.6em;font-weight:800;text-align:center;padding:.2em 0">12월</div><div style="display:grid;place-items:center;height:68%;font-size:1.6em;font-weight:900;color:#222">25</div>', { background: '#fff', borderRadius: '4px', overflow: 'hidden' });
-    on(cal, () => toast('달력이에요. 25일이 크게 적혀 있어요.'));
-  } },
+/* ---------- 2. 별빛 거실 ---------- */
+{ name: '별빛 거실', theme: T4('linear-gradient(#34465a,#2b3a4b)', STONE),
+  hints: ['위태로워 보이는 물건이 있어요.', '액자는 색보다 크기가 중요해요.', '차가운 창문은 방이 따뜻해져야 속을 보여 줘요.', '시계는 멈춘 이유가 있어요. 무언가 빠져 있어요.', '문 옆의 글귀는 "벽에 걸린" 하늘만 말해요.'],
+  views: [
+    () => {
+      makeDoor(() => {
+        if (!F.cardin) { if (has('card')) { take('card'); solved('cardin', '카드를 대자 문 옆 숫자판에 불이 들어왔어요.'); } else { sfx.bad(); toast('문 옆에 카드 리더기가 있어요.'); } return; }
+        wKeypad('문 옆 숫자판 (두 자리)', '13', () => unlockDoor());
+      });
+      put('note', 68, 30, 22, 12, '하늘의 별을<br>모두 세어라', { fontSize: '.6em', textAlign: 'center', lineHeight: 1.4 });
+      O(10, 50, 18, 14, F.tile ? '<div style="position:absolute;inset:8%;background:#222;display:grid;grid-template-columns:repeat(3,1fr);gap:4%;padding:6%">' + '<i style="background:#555;border-radius:2px"></i>'.repeat(9) + '</div>' : '<i style="position:absolute;left:20%;top:30%;width:60%;height:2px;background:#333;transform:rotate(25deg)"></i><i style="position:absolute;left:30%;top:55%;width:50%;height:2px;background:#333;transform:rotate(-15deg)"></i>', { background: '#8a8f99', borderRadius: '2px' }, () => {
+        if (!F.tile) { if (has('ham')) { take('ham'); solved('tile', '쾅! 금 간 타일을 깨자 뒤에 작은 판이 나왔어요.'); } else toast('금이 간 벽 타일이에요.'); return; }
+        if (F.lt) { toast('불이 모두 켜진 판이에요.'); return; }
+        wLights('타일 뒤의 빛 판', 'lt2', 3, () => { solved('lt'); give('card'); });
+      });
+    },
+    () => {
+      [['#d84a4a', 2, 10, 6, 26, 19], ['#4a7bd8', 7, 40, 9, 14, 11], ['#3fae6a', 4, 58, 7, 20, 15]].forEach(([c, n, x, y, w, hh]) =>
+        O(x, y, w, hh, '<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:0 .05em;padding:.1em;color:#e7b52c;font-size:' + (n > 4 ? .4 : .62) + 'em;line-height:1.1">' + '★'.repeat(n) + '</div>', { background: '#f2e7d0', border: '.4em solid ' + c, display: 'grid', placeItems: 'center' }, () => toast('별이 그려진 액자예요.')));
+      O(62, 84, 16, 10, '<div style="color:#e7b52c;font-size:.6em">★★★★★</div>', { background: '#f2e7d0', border: '.3em solid #e0c341', transform: 'rotate(12deg)', display: 'grid', placeItems: 'center' }, () => toast('바닥에 떨어진 액자예요. 유리가 깨져 있어요.'));
+      O(14, 40, 44, 30, '<div style="position:absolute;left:6%;right:6%;bottom:8%;height:40%;background:repeating-linear-gradient(90deg,#fff 0 12%,#222 12% 13%)"></div>', { background: '#1b1b1b', borderRadius: '6px 6px 2px 2px' }, () => {
+        if (F.piano) { toast('피아노 뚜껑 속은 비어 있어요.'); return; }
+        wPiano('피아노', 7, [0, 2, 4, 2, 0, 5, 4], () => { solved('piano', '피아노 뚜껑이 스르륵 열렸어요.'); give('ham'); });
+      });
+      O(66, 34, 24, 22, F.fire ? '<div style="display:flex;gap:.2em;font-size:1em;color:#e05252;font-weight:900">♥ ★ ● ▲</div>' : '', { background: F.fire ? '#b8d4e8' : 'linear-gradient(#dfe9f0,#fff)', border: '.3em solid #6b4a2e', display: 'grid', placeItems: 'center' }, () => toast(F.fire ? '성에가 녹자 유리에 그려진 무늬가 보여요.' : '창문에 성에가 잔뜩 끼어 있어요.'));
+    },
+    () => {
+      O(14, 52, 32, 20, '<div style="position:absolute;left:0;right:0;top:30%;height:6%;background:#d9b46a"></div>', { background: '#7d5732', borderRadius: '.4em .4em .2em .2em' }, () => {
+        if (F.chest) { toast('빈 상자예요.'); return; }
+        wDial('상자 자물쇠 (세 자리)', '742', () => { solved('chest'); give('match'); });
+      });
+      O(70, 46, 12, 26, '', { background: '#6b4a2e' });
+      if (!F.vase) EM(69, 30, 14, 16, '🏺', 2.4, () => { sfx.bad(); toast('쨍그랑! 꽃병이 넘어졌어요. 뭔가 떨어졌어요.'); set('vase'); });
+      else NOTE(72, 84, 10, 8, '📝', () => look('꽃병 속 쪽지', paper('벽에 걸린 것만.<br>작은 것부터.', 'font-size:20px')));
+      O(40, 20, 20, 14, F.mbox ? '<span class="emo" style="font-size:1.4em">🎶</span>' : '<b style="color:#f0c264;font-size:.6em">♥★●▲■</b>', { background: '#4a2e5a', borderRadius: '.4em', boxShadow: 'inset 0 -.4em 0 #321e3d', display: 'grid', placeItems: 'center' }, () => {
+        if (F.mbox) { toast('오르골이 잔잔하게 울려요.'); return; }
+        wSym('오르골 자물쇠', ['♥', '★', '●', '▲', '■'], ['♥', '★', '●', '▲'], () => { solved('mbox'); give('gear'); });
+      });
+    },
+    () => {
+      O(10, 34, 36, 38, F.fire ? '<span class="emo" style="font-size:2.6em;position:absolute;left:30%;top:40%">🔥</span>' : '', { background: '#4a3a32', borderRadius: '.4em .4em 0 0', boxShadow: 'inset 0 0 0 .5em #6b5a4e, inset 0 -3em 2em #000' }, () => {
+        if (F.fire) { toast('벽난로가 따뜻하게 타올라요.'); return; }
+        if (has('match')) { take('match'); solved('fire', '불을 붙였어요. 방이 따뜻해져요.'); } else toast('장작이 쌓인 차가운 벽난로예요.');
+      });
+      O(62, 12, 22, 60, '<div style="position:absolute;left:15%;right:15%;top:6%;height:30%;border-radius:50%;background:#fff8ea;font-size:1.2em">' + clockFace(7, 0) + '</div><div style="position:absolute;left:30%;right:30%;top:45%;bottom:8%;background:#2a1a10;border-radius:.3em"></div>', { background: '#6b4a2e', borderRadius: '1em 1em .3em .3em' }, () => {
+        if (!F.clock) { if (has('gear')) { take('gear'); solved('clock', '톱니바퀴를 끼우자 시계가 째깍째깍 움직여요. 아래 유리문이 열렸어요.'); } else toast('괘종시계가 멈춰 있어요. 안에 빈 자리가 보여요.'); return; }
+        look('시계 속에서 찾은 악보', staff([0, 2, 4, 2, 0, 5, 4], ''));
+      });
+    },
+  ] },
+
+/* ---------- 3. 창고 ---------- */
+{ name: '창고', theme: T4('linear-gradient(#4b4b4b,#3c3c3c)', 'linear-gradient(#5a5650,#4b4843)'),
+  hints: ['통에 적힌 글자는 한쪽 면만 보여요.', '손이 닿지 않으면 두 물건을 합쳐 봐요.', '불이 들어오면 할 수 있는 일이 늘어나요.', '뜨거운 것은 맨손으로 잡을 수 없어요.', '물이 빠지면 바닥에 있던 것이 보여요. 저울 옆 규칙도 잊지 마세요.'],
+  combos: { 'mag+str': 'rod' },
+  views: [
+    () => {
+      makeDoor(lockedMsg('문 아래 저울 장치와 연결돼 있어요.'));
+      put('note', 68, 18, 18, 10, '추는<br>세 개만', { fontSize: '.65em', textAlign: 'center', lineHeight: 1.3 });
+      O(68, 56, 26, 16, '<div style="position:absolute;left:47%;top:0;width:6%;height:100%;background:#8a7a5a"></div><div style="position:absolute;left:5%;right:5%;top:10%;height:8%;background:#b9a46e"></div>', {}, () => wBalance('저울', [2, 3, 4, 5, 6], 13, 3, () => unlockDoor('저울이 수평이 되자 문이 철컥 열렸어요!')));
+      O(10, 76, 30, 14, F.drain ? '<span style="font-size:.6em;color:#555">구겨진 종이</span>' : '', { background: F.drain ? '#4b4843' : 'radial-gradient(ellipse,#4a7fb0,#2c5a85)', borderRadius: '50%' }, () => {
+        if (F.drain) look('물이 빠진 자리의 송장', paper('<div style="font-size:13px;color:#8a7a5a">택배 송장</div>상자 1개 · 무게 <span style="font-size:28px">13kg</span>', 'font-size:17px'));
+        else toast('물웅덩이예요. 바닥이 안 보여요.');
+      });
+      if (!F.power) dim(.5);
+    },
+    () => {
+      O(10, 34, 80, 3, '', { background: '#6b4a2e' }); O(10, 56, 80, 3, '', { background: '#6b4a2e' });
+      const sides = ['<b style="font-size:.5em">PAINT</b>', '<b style="font-size:.9em">★</b>', '<b style="font-size:.55em">4186</b>'];
+      O(14, 44, 12, 12, sides[F.can || 0], { background: 'linear-gradient(90deg,#3a6fa8,#5b8fd0,#3a6fa8)', borderRadius: '.3em', color: '#fff', display: 'grid', placeItems: 'center' }, () => { sfx.tap(); set('can', ((F.can || 0) + 1) % 3); });
+      O(40, 46, 18, 10, '', { background: '#c0392b', borderRadius: '.3em', boxShadow: 'inset 0 .4em 0 #962d22' }, () => { if (F.tb) { toast('빈 공구함이에요.'); return; } wKeypad('공구함 (네 자리)', '4186', () => { solved('tb'); give('drv'); }); });
+      if (!F.str) EM(66, 24, 10, 10, '🧵', 1.5, () => { F.str = 1; give('str'); render(); });
+      EM(70, 44, 14, 12, '🪣', 1.8, () => toast('빈 양동이예요.'));
+      if (!F.power) dim(.5);
+    },
+    () => {
+      O(14, 10, 26, 16, '', { background: F.vent ? '#111' : 'repeating-linear-gradient(#999 0 12%,#666 12% 22%)', border: '.3em solid #888', borderRadius: '4px' }, () => {
+        if (F.got) { toast('텅 빈 환풍구예요.'); return; }
+        if (!F.vent) { if (has('drv')) { take('drv'); solved('vent', '뚜껑을 열었어요. 깊숙한 곳에 열쇠가 보여요.'); } else toast('나사로 꽉 조여 있어요.'); return; }
+        if (has('rod')) { take('rod'); F.got = 1; give('key'); render(); } else toast('열쇠가 너무 깊이 있어 손이 닿지 않아요.');
+      });
+      O(12, 54, 28, 18, '<div style="position:absolute;left:45%;top:0;bottom:0;width:10%;background:#d9c08a"></div>', { background: '#a77b4b', borderRadius: '3px' }, () => { if (!F.mag) { F.mag = 1; give('mag'); render(); } else toast('빈 상자예요.'); });
+      O(58, 20, 26, 52, '<div style="position:absolute;left:49%;top:0;bottom:0;width:2%;background:#555"></div><i style="position:absolute;left:40%;top:45%;width:.4em;height:1.2em;background:#ccc"></i>', { background: 'linear-gradient(90deg,#7a8a99,#90a0b0,#7a8a99)', borderRadius: '3px' }, () => {
+        if (F.locker) { look('사물함 문 안쪽 스티커', '<p>전기 차단기 그림이 그려져 있어요.</p>' + bulbRow([1, 1, 1, 0, 0])); return; }
+        if (has('key')) { take('key'); solved('locker', '사물함이 열렸어요.'); give('fuse'); give('glove'); } else toast('잠긴 사물함이에요.');
+      });
+      if (!F.power) dim(.5);
+    },
+    () => {
+      O(12, 16, 18, 20, F.power ? '<span class="emo" style="font-size:1.4em">⚡</span>' : '', { background: '#555', border: '.25em solid #333', borderRadius: '.3em' }, () => {
+        if (F.power) { toast('전기가 들어와 있어요.'); return; }
+        if (has('fuse')) { take('fuse'); solved('power', '퓨즈를 끼우자 창고에 불이 들어왔어요!'); } else toast('퓨즈 자리가 비어 있어요.');
+      });
+      O(36, 16, 26, 20, '<div style="display:flex;gap:6%;justify-content:center;padding-top:20%">' + '<i style="width:12%;height:2em;background:#222"></i>'.repeat(5) + '</div>', { background: '#bbb', borderRadius: '.3em' }, () => {
+        if (!F.power) { toast('전기가 안 들어와요.'); return; }
+        if (F.brk) { toast('차단기가 모두 맞춰져 있어요.'); return; }
+        wSwitch('전기 차단기', 'brkst', [[0], [1, 3], [2], [3, 4], [4]], [1, 1, 1, 0, 0], () => solved('brk', '크레인이 움직여 뭔가를 내려놓았어요!'));
+      });
+      if (F.brk && !F.valve) O(66, 56, 14, 14, '<span class="emo" style="font-size:1.8em">🔧</span>', { filter: 'drop-shadow(0 0 .4em #ff6a3d)' }, () => { if (has('glove')) { F.valve = 1; give('valve'); render(); } else { sfx.bad(); toast('앗 뜨거! 맨손으로는 못 잡겠어요.'); } });
+      O(84, 8, 6, 64, '', { background: 'linear-gradient(90deg,#6a6a6a,#9a9a9a,#6a6a6a)' });
+      O(78, 36, 14, 10, F.drain ? '<span class="emo" style="font-size:1.4em">🔧</span>' : '<i style="width:.6em;height:.6em;border-radius:50%;background:#333;display:block"></i>', { background: '#888', borderRadius: '50%', display: 'grid', placeItems: 'center' }, () => {
+        if (F.drain) { toast('밸브가 열려 있어요.'); return; }
+        if (has('valve')) { take('valve'); solved('drain', '밸브를 돌리자 쏴아- 물이 빠지는 소리가 나요.'); } else toast('손잡이가 빠진 밸브예요.');
+      });
+      if (!F.power) dim(.5);
+    },
+  ] },
+
+/* ---------- 4. 지하실 ---------- */
+{ name: '어두운 지하실', theme: T4('linear-gradient(#3e4a5a,#334050)', 'linear-gradient(#4a4440,#3c3733)'),
+  hints: ['어둠 속에서 빛나는 것은 하나만이 아니에요.', '네 벽의 숫자가 모두 같은 색은 아니에요.', '바닥 판자는 손으로는 안 뜯겨요.', '뒤집힌 글씨는 비춰 봐야 읽혀요.', '그림 앞면만 보지 마세요. 꼭 왼쪽부터 읽는 것도 아니에요.'],
+  combos: { 'bat+fl0': 'fl' },
+  dark: () => !F.gen,
+  views: [
+    () => {
+      makeDoor(() => {
+        if (!F.arrows) { sfx.bad(); toast('문 옆 전기 잠금 장치에 빨간 불이 켜져 있어요.'); return; }
+        if (!F.handle) { if (has('handle')) { take('handle'); solved('handle', '문에 손잡이를 달았어요. 문 위 빛 판이 깨어났어요.'); } else toast('문에 손잡이가 없어요.'); return; }
+        wLights('문 위의 빛 판', 'lt4', 4, () => unlockDoor());
+      });
+      O(12, 8, 8, 8, '6', { color: '#ff6b5e', fontSize: '1.6em', fontWeight: 900 }); O(80, 10, 8, 8, '2', { color: '#e8f7ff', fontSize: '1.6em', fontWeight: 900 });
+      O(10, 60, 24, 6, '붉은 것만, 정면부터 오른쪽으로 돌며', { color: '#ffdfa8', fontSize: '.55em', fontWeight: 800 });
+      O(70, 28, 22, 10, '<b style="display:block;transform:scaleX(-1);font-size:1.4em;letter-spacing:.2em;color:#cfe">4728</b>', { display: 'grid', placeItems: 'center' }, () => { if (has('mirror')) look('손거울로 비춰 봤어요', paper('<span style="font-size:40px;letter-spacing:10px">4728</span>')); else toast('글씨가 뒤집혀 있어서 읽기 어려워요.'); });
+      O(72, 44, 18, 14, '<i style="position:absolute;left:60%;top:30%;width:.9em;height:.9em;border-radius:50%;border:.18em solid #aaa"></i>', { background: 'linear-gradient(#555,#3a3a3a)', borderRadius: '.3em' }, () => { if (F.wsafe) { toast('빈 금고예요.'); return; } wKeypad('벽 금고', '4728', () => { solved('wsafe'); give('handle'); }); });
+    },
+    () => {
+      O(40, 8, 8, 8, '0', { color: '#ff6b5e', fontSize: '1.6em', fontWeight: 900 }); O(60, 40, 8, 8, '3', { color: '#e8f7ff', fontSize: '1.6em', fontWeight: 900 });
+      O(14, 50, 34, 22, '<div style="position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0 30%,rgba(0,0,0,.2) 30% 33%)"></div>', { background: '#8b6a42', borderRadius: '3px' }, () => { if (F.crate) { toast('빈 나무 상자예요.'); return; } wKeypad('나무 상자 (네 자리)', '6091', () => { solved('crate'); give('pick'); give('mirror'); }); });
+      O(58, 58, 34, 14, '', { background: '#6b4a2e', borderRadius: '3px' });
+      O(66, 62, 16, 7, '<i style="position:absolute;left:35%;right:35%;top:40%;height:20%;background:#9ff;border-radius:3px;box-shadow:0 0 .6em #9ff"></i>', { background: '#58391f', border: '1px solid #3b2512', zIndex: 60 }, () => { if (!F.fl0) { F.fl0 = 1; give('fl0'); render(); } else toast('빈 서랍이에요.'); });
+    },
+    () => {
+      O(84, 12, 8, 8, '9', { color: '#ff6b5e', fontSize: '1.6em', fontWeight: 900 });
+      O(12, 78, 36, 12, F.board ? '<div style="position:absolute;inset:10%;background:#1a120c"></div>' : '', { background: 'repeating-linear-gradient(90deg,#6b4a2e 0 24%,#5a3b22 24% 25%)' }, () => {
+        if (!F.board) { if (has('pick')) { take('pick'); solved('board', '판자를 뜯어냈어요. 밑에 그림 퍼즐 상자가 있어요.'); } else toast('바닥 판자 하나가 살짝 들떠 있어요.'); return; }
+        if (F.slide4) { toast('빈 상자예요.'); return; }
+        wSlide('그림 조각 상자', 'sl4', 'hills', () => { solved('slide4'); give('gear'); });
+      });
+      O(56, 40, 32, 32, '<div style="position:absolute;left:10%;top:15%;width:35%;height:35%;border-radius:50%;border:.3em solid #444;background:' + (F.gin ? '#777' : '#222') + '"></div><div style="position:absolute;right:10%;top:20%;width:35%;height:25%;background:#333;border-radius:.2em;color:#7f7;font-size:.5em;display:grid;place-items:center">' + (F.gen ? 'ON' : '') + '</div>', { background: '#5a6a5a', borderRadius: '.5em' }, () => {
+        if (F.gen) { toast('발전기가 부르릉 돌아가요.'); return; }
+        if (!F.gin) { if (has('gear')) { take('gear'); solved('gin', '톱니바퀴를 끼웠어요. 시동 버튼 네 개가 깜빡여요.'); } else toast('발전기예요. 톱니바퀴 하나가 빠져 있어요.'); return; }
+        wSimon('발전기 시동', 5, () => solved('gen', '부르릉! 발전기가 돌아가며 불이 들어왔어요!'));
+      });
+    },
+    () => {
+      O(14, 8, 8, 8, '1', { color: '#ff6b5e', fontSize: '1.6em', fontWeight: 900 }); O(86, 46, 8, 8, '5', { color: '#e8f7ff', fontSize: '1.6em', fontWeight: 900 });
+      [['☝️', 'Ⅲ'], ['👉', 'Ⅰ'], ['👇', 'Ⅳ'], ['👈', 'Ⅱ']].forEach(([p, n], i) => O(10 + i * 20, 20, 16, 13, '<span class="emo" style="font-size:1.6em">' + p + '</span>', { background: '#f2e7d0', border: '.3em solid #8b5e34', display: 'grid', placeItems: 'center' }, () => look('액자를 살짝 뒤집어 봤어요', '<div style="width:130px;height:100px;background:#8b5e34;border-radius:6px;display:grid;place-items:center;font-size:46px;color:#f2e7d0;font-family:serif">' + n + '</div>')));
+      O(16, 44, 30, 20, '<div style="display:flex;justify-content:space-around;padding-top:25%">' + '<i style="width:1.2em;height:1.2em;border-radius:50%;background:#888"></i>'.repeat(4) + '</div>', { background: '#555', borderRadius: '.4em' }, () => {
+        if (F.arrows) { toast('파이프 밸브가 모두 맞춰져 있어요.'); return; }
+        wArrows('파이프 밸브', 'ar4', [1, 3, 0, 2], () => solved('arrows', '쿵! 어디선가 전기 잠금이 풀리는 소리가 나요.'));
+      });
+      O(60, 50, 26, 22, '', { background: '#4a3a5a', borderRadius: '.8em .8em .2em .2em' });
+      if (!F.bat) O(66, 52, 8, 5, '<i style="position:absolute;right:15%;top:30%;width:.35em;height:.35em;border-radius:50%;background:#f44;box-shadow:0 0 .5em #f44"></i>', { background: '#222', borderRadius: '.3em', zIndex: 60 }, () => { F.bat = 1; give('bat'); toast('리모컨에서 건전지를 뺐어요.'); render(); });
+      O(74, 8, 16, 12, '', { background: PICS.hills, backgroundSize: 'cover', border: '.25em solid #8b5e34' }, () => look('작은 사진', picFull('hills', 64)));
+    },
+  ] },
+
+/* ---------- 5. 음악실 ---------- */
+{ name: '음악실', theme: T4('linear-gradient(#5a2e45,#4a2538)', WOOD),
+  hints: ['악보는 한 장이 아니에요. 번호를 봐요.', '레코드판만으로는 소리가 나지 않아요.', '긴 소리굽쇠일수록 낮은 소리가 나요.', '조명이 켜지면 무대 바닥을 봐요.'],
+  views: [
+    () => {
+      makeDoor(() => wSym('문의 음표 자물쇠', ['♪', '♫', '♩', '♬'], ['♫', '♪', '♬', '♩'], () => unlockDoor()));
+      if (F.lights) O(36, 76, 28, 12, '♫ ♪ ♬ ♩', { color: '#ffe68a', fontSize: '1.1em', fontWeight: 900, textAlign: 'center', textShadow: '0 0 .5em #ffe68a', background: 'radial-gradient(ellipse,rgba(255,240,180,.35),transparent 70%)' });
+      O(70, 30, 20, 14, '', { background: '#fff8e3', borderRadius: '3px' }, () => look('무대 조명 포스터', '<p>"오늘의 조명"</p>' + bulbRow([1, 0, 1, 1])));
+      O(8, 52, 24, 20, '<div style="position:absolute;left:10%;top:10%;width:60%;height:70%;border-radius:50%;background:' + (F.rec ? 'repeating-radial-gradient(#111 0 4%,#333 4% 6%)' : '#3a2a1a') + '"></div><i style="position:absolute;right:10%;top:15%;width:.2em;height:60%;background:' + (F.needle ? '#ddd' : 'transparent') + ';transform:rotate(25deg)"></i>', { background: '#6b4a2e', borderRadius: '.3em' }, () => {
+        if (!F.rec) { if (has('rec')) { take('rec'); solved('rec', '레코드판을 올렸어요.'); } else toast('턴테이블이에요. 판이 없어요.'); return; }
+        if (!F.needle) { if (has('needle')) { take('needle'); solved('needle', '바늘을 달았어요.'); } else toast('바늘이 빠져 있어서 소리가 안 나요.'); return; }
+        tone(220, .3, 'sine', .1); look('레코드에서 목소리가 흘러나와요', paper('"넷… 하나… 여섯…"', 'font-size:22px'));
+      });
+    },
+    () => {
+      O(16, 8, 34, 18, staff([0, 2, 4], '1', false), {}, () => look('벽에 붙은 악보', staff([0, 2, 4], '1')));
+      O(10, 40, 80, 32, '<div style="position:absolute;left:4%;right:4%;bottom:8%;height:45%;background:repeating-linear-gradient(90deg,#fff 0 12.3%,#222 12.3% 12.8%)"></div>', { background: '#1b1b1b', borderRadius: '6px 6px 2px 2px' }, () => {
+        if (F.piano) { toast('피아노 뚜껑 속은 비어 있어요.'); return; }
+        wPiano('피아노 (건반 8개)', 8, [0, 2, 4, 5, 4, 2, 7, 6, 4], () => { solved('piano', '피아노 뚜껑이 열렸어요.'); give('fork'); });
+      });
+    },
+    () => {
+      O(12, 46, 30, 26, '<div style="position:absolute;inset:10% 10% 40%;border-radius:50%;background:radial-gradient(#e8e0d0,#b9b0a0)"></div>', { background: '#a33', borderRadius: '.4em' }, () => { if (F.drum) { toast('북 가죽이 열려 있어요.'); return; } wSimon('북 네 개', 5, () => { solved('drum', '북 가죽 한쪽이 벌어지며 뭔가 떨어졌어요.'); give('needle'); }); });
+      O(52, 54, 38, 14, '', { background: '#3a2414', borderRadius: '2em .6em .6em 2em' }, () => { if (F.violin) { toast('빈 바이올린 케이스예요.'); return; } wDial('바이올린 케이스 (세 자리)', '259', () => { solved('violin'); give('rec'); }); });
+      if (F.violin) O(60, 40, 22, 12, staff([7, 6, 4], '3', false), {}, () => look('케이스 속 악보', staff([7, 6, 4], '3')));
+      O(56, 8, 22, 22, '<div style="background:#d84a4a;color:#fff;font-size:.5em;text-align:center">달력</div><div style="display:grid;grid-template-columns:repeat(4,1fr);font-size:.45em;color:#333;text-align:center;line-height:1.6">' + Array.from({ length: 12 }, (_, i) => [2, 5, 9].includes(i + 1) ? '<b style="border:1px solid #d84a4a;border-radius:50%">' + (i + 1) + '</b>' : '<span>' + (i + 1) + '</span>').join('') + '</div>', { background: '#fff', borderRadius: '3px' }, () => toast('동그라미 친 날이 세 개 있어요. 아래에 "작은 날부터"라고 적혀 있어요.'));
+    },
+    () => {
+      O(10, 60, 34, 10, '', { background: '#4a2e1c', borderRadius: '.3em' }, () => { if (F.bench) { look('의자 속 악보', staff([5, 4, 2], '2')); return; } wDial('피아노 의자 자물쇠 (세 자리)', '416', () => solved('bench', '의자 뚜껑이 열렸어요. 안에 악보가 있어요.')); });
+      const fl = [60, 90, 45, 75];
+      O(52, 30, 34, 26, '<div style="display:flex;gap:8%;align-items:flex-end;height:80%;padding:0 10%">' + fl.map((l, i) => (i === 1 && !F.forkin) ? '<i style="flex:1;height:10%;background:#555"></i>' : '<i style="flex:1;height:' + l + '%;background:linear-gradient(90deg,#aaa,#eee,#aaa);border-radius:2px"></i>').join('') + '</div>', { background: '#3a2a1a', borderRadius: '.3em' }, () => {
+        if (!F.forkin) { if (has('fork')) { take('fork'); solved('forkin', '빈 자리에 소리굽쇠를 꽂았어요.'); } else toast('소리굽쇠 하나가 빠져 있어요.'); return; }
+        if (F.forks) { toast('소리굽쇠가 맑게 울려요.'); return; }
+        wSeq('소리굽쇠를 차례로 쳐요', fl, [1, 3, 0, 2], () => solved('forks', '맑은 소리와 함께 스위치 판에 전원이 들어왔어요.'), i => '<i style="display:block;width:14px;height:' + fl[i] + 'px;margin:auto auto 6px;background:linear-gradient(90deg,#aaa,#eee,#aaa)"></i>');
+      });
+      put('note', 54, 14, 26, 10, '낮은 소리부터<br>높은 소리로', { fontSize: '.55em', textAlign: 'center', lineHeight: 1.4 });
+      O(14, 22, 24, 14, '<div style="display:flex;gap:10%;justify-content:center;padding-top:15%">' + '<i style="width:14%;height:1.4em;background:#f4f0e6;border:1px solid #aaa"></i>'.repeat(4) + '</div>', { background: '#d8d2c4', borderRadius: '.3em' }, () => {
+        if (!F.forks) { toast('전원이 들어오지 않았어요.'); return; }
+        if (F.lights) { toast('무대 조명이 켜져 있어요.'); return; }
+        wSwitch('조명 스위치', 'lst5', [[0, 1], [1], [2, 3], [3]], [1, 0, 1, 1], () => solved('lights', '무대 조명이 켜졌어요! 문 앞 바닥이 환해졌어요.'));
+      });
+    },
+  ] },
+
+/* ---------- 6. 부엌 ---------- */
+{ name: '부엌', theme: T4('linear-gradient(#e0d6c2,#cbbfa6)', TILE),
+  hints: ['냉장고 쪽지는 "무엇"의 순서, 숫자는 다른 곳에 있어요.', '얼음 속 열쇠는 열이 필요해요.', '접시 무늬의 순서를 봐요.', '뜨거운 오븐은 맨손으로 못 열어요. 요리법에 시간이 적혀 있어요.', '수도꼭지 위 타일 그림을 봐요.'],
+  views: [
+    () => {
+      makeDoor(() => {
+        if (!F.ring) { if (has('ring')) { take('ring'); solved('ring', '반지를 문의 홈에 끼웠어요. 숫자판이 켜졌어요.'); } else { sfx.bad(); toast('문에 반지 모양 홈이 있어요.'); } return; }
+        wKeypad('문 숫자판 (두 자리)', '58', () => unlockDoor());
+      });
+      O(70, 16, 22, 56, '<div style="position:absolute;left:0;right:0;top:38%;height:2%;background:#999"></div><i style="position:absolute;left:8%;top:15%;width:.3em;height:1.5em;background:#999"></i>', { background: 'linear-gradient(90deg,#e8ecef,#fff,#e8ecef)', borderRadius: '.4em' }, () => { if (F.fridge) { toast('냉장고가 텅 비었어요.'); return; } wDial('냉장고 자물쇠 (세 자리)', '321', () => { solved('fridge'); give('ice'); }); });
+      NOTE(73, 44, 16, 9, '📝', () => look('냉장고 자석 쪽지', paper('달걀 · 밀가루 · 우유', 'font-size:20px')));
+    },
+    () => {
+      O(14, 44, 40, 28, '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12%;padding:10% 14%">' + '<i style="aspect-ratio:1;border-radius:50%;border:.25em solid #333"></i>'.repeat(2) + '</div>' + (F.knob ? '<span style="position:absolute;right:6%;bottom:8%;font-size:1em">🎛️</span>' : ''), { background: '#2a2a2a', borderRadius: '.3em' }, () => {
+        if (!F.knob) { if (has('knob')) { take('knob'); solved('knob', '손잡이를 끼우고 불을 켰어요.'); } else toast('가스레인지 손잡이가 빠져 있어요.'); return; }
+        if (F.melt) { toast('불이 켜져 있어요.'); return; }
+        if (has('ice')) { take('ice'); solved('melt', '얼음이 녹으며 작은 열쇠가 나왔어요!'); give('skey'); } else toast('불이 활활 타요.');
+      });
+      O(62, 14, 28, 22, '<div style="display:flex;gap:8%;justify-content:center;align-items:flex-end;height:80%">' + ['#c0392b', '#e1b12c', '#44a05a', '#2d2d2d'].map(c => '<i style="width:16%;height:70%;background:' + c + ';border-radius:.2em .2em 0 0"></i>').join('') + '</div>', { background: '#8b6a42', borderRadius: '.2em' }, () => toast('양념통 네 개가 놓여 있어요.'));
+      O(62, 44, 28, 14, '<i style="position:absolute;left:44%;top:40%;width:12%;height:20%;background:#d9b46a"></i>', { background: '#7d5732', borderRadius: '.2em' }, () => {
+        if (!F.sdraw) { if (has('skey')) { take('skey'); solved('sdraw', '양념 서랍 자물쇠가 풀렸어요. 안에 양념 버튼이 있어요.'); } else toast('작은 자물쇠가 달린 서랍이에요.'); return; }
+        if (F.spice) { toast('빈 서랍이에요.'); return; }
+        wSeq('양념 버튼', ['#e1b12c', '#2d2d2d', '#c0392b', '#44a05a'], [2, 0, 3, 1], () => { solved('spice'); give('oglove'); });
+      });
+    },
+    () => {
+      O(12, 8, 40, 10, '<div style="display:flex;gap:6%;justify-content:center;font-size:1.1em;color:#2d5d9a">' + '<span>♣</span><span>♥</span><span>♠</span><span>♦</span>' + '</div>', { background: '#f4f0e6', borderRadius: '.3em' }, () => toast('접시 네 장이 나란히 세워져 있어요.'));
+      O(12, 22, 40, 22, '<div style="display:flex;gap:10%;justify-content:center;padding-top:8%;font-size:1.4em;color:#2d5d9a">' + [3, 0, 1].map(arrowTri).join('') + '</div>', { background: 'repeating-conic-gradient(#e8f0f5 0 25%,#d0dde8 0 50%) 0 0/25% 50%' }, () => toast('물방울 그림 타일이에요.'));
+      O(12, 48, 40, 24, '<div style="position:absolute;left:10%;right:10%;top:10%;height:40%;background:#cfd8de;border-radius:0 0 2em 2em"></div>', { background: '#9aa5ab', borderRadius: '.3em' }, () => {
+        if (F.sink) { toast('개수대 물이 시원하게 흘러요.'); return; }
+        wArrows('수도꼭지 세 개', 'ar6', [3, 0, 1], () => { solved('sink', '물이 흐르자 배수구에서 뭔가 튀어나왔어요!'); give('ring'); });
+      });
+      O(62, 20, 28, 34, '', { background: '#a77b4b', borderRadius: '.3em', boxShadow: 'inset 0 0 0 .3em #7d5732' }, () => { if (F.cup) { toast('찬장 안은 비어 있어요.'); return; } wSym('찬장 자물쇠', ['♥', '♣', '♦', '♠'], ['♣', '♥', '♠', '♦'], () => { solved('cup'); give('knob'); }); });
+    },
+    () => {
+      O(14, 52, 40, 6, '', { background: '#8b6a42' }); O(16, 58, 3, 14, '', { background: '#6b4a2e' }); O(49, 58, 3, 14, '', { background: '#6b4a2e' });
+      NOTE(24, 44, 14, 8, '📜', () => look('요리법 카드', paper('달걀 3개 · 우유 1컵 · 밀가루 2컵<br>양념: 고춧가루 → 강황 → 바질 → 후추<br>오븐: 4시 30분에 꺼내기', 'font-size:15px;text-align:left')));
+      O(62, 40, 28, 32, '<div style="position:absolute;left:10%;right:10%;top:25%;bottom:12%;background:#222;border-radius:.3em;box-shadow:inset 0 0 1em #f63"></div><div style="position:absolute;left:35%;right:35%;top:5%;height:15%;background:#fff8ea;border-radius:50%;font-size:.5em">' + clockFace(12, 0) + '</div>', { background: '#555', borderRadius: '.3em' }, () => {
+        if (F.oven) { look('빵 속에서 나온 쪽지', paper('<span style="font-size:36px">58</span>')); return; }
+        if (!has('oglove')) { sfx.bad(); toast('앗 뜨거! 오븐 문을 맨손으로 열 수 없어요.'); return; }
+        wClock('오븐 타이머를 맞춰요', 4, 30, () => solved('oven', '띵! 오븐에서 빵을 꺼냈어요. 빵 속에 쪽지가 있어요.'));
+      });
+    },
+  ] },
+
+/* ---------- 7. 온실 ---------- */
+{ name: '온실', theme: T4('linear-gradient(#cfe8d4,#a8d1b0)', 'linear-gradient(#6b5236,#59432b)'),
+  hints: ['창고 문 팻말이 꽃의 순서를 알려 줘요. 꽃잎을 세어 봐요.', '물뿌리개는 연못에서 채울 수 있어요. 여러 번도 돼요.', '심은 씨앗이 피워 낸 꽃을 잘 봐요.', '분수가 뿜어내는 무지개의 순서를 기억해요.'],
+  views: [
+    () => {
+      makeDoor(() => {
+        if (!F.vine) { if (has('shear')) { solved('vine', '덩굴을 잘라 냈어요. 문 옆에 빛 판이 나왔어요.'); } else { sfx.bad(); toast('덩굴이 문을 칭칭 감고 있어요.'); } return; }
+        if (!F.panel) { wLights('문 옆 빛 판', 'lt7', 3, () => solved('panel', '빛 판이 모두 켜졌어요. 이제 열쇠 구멍만 남았어요.')); return; }
+        if (has('key')) { take('key'); unlockDoor(); } else toast('열쇠 구멍이 있어요.');
+      });
+      if (!F.vine) O(34, 22, 32, 52, '<div style="position:absolute;inset:0;background:repeating-linear-gradient(60deg,transparent 0 8%,#2e7d32 8% 11%),repeating-linear-gradient(-50deg,transparent 0 9%,#388e3c 9% 12%)"></div>', { pointerEvents: 'none' });
+      EM(70, 50, 20, 22, '🌵', 2.6, () => toast('가시가 많은 선인장이에요.'));
+    },
+    () => {
+      [['#e05252', 5, 10], ['#e8c33c', 3, 30], ['#4a8be0', 6, 50]].forEach(([c, n, x]) => O(x, 40, 14, 14, petals(n, c), {}, () => toast('꽃이 피어 있어요.')));
+      O(8, 56, 84, 16, '', { background: '#6b4a2e', borderRadius: '.3em' });
+      O(70, F.sun ? 18 : 40, 16, F.sun ? 38 : 16, F.sun ? '<span class="emo" style="font-size:2.6em">🌻</span>' : '<span class="emo" style="font-size:1.6em;filter:grayscale(1)">🥀</span>', {}, () => {
+        if (F.sun) { if (!F.coin) { F.coin = 1; give('coin'); render(); } else toast('해바라기가 활짝 웃고 있어요.'); return; }
+        if (has('can1')) { take('can1'); give('can0'); solved('sun', '물을 주자 해바라기가 쑥쑥 자라났어요! 꽃 속에 뭔가 반짝여요.'); } else toast('시든 꽃이에요. 목말라 보여요.');
+      });
+      O(36, 60, 14, 12, F.bloom ? '<span class="emo" style="font-size:1.4em">🌷</span>' : (F.seed ? '<span class="emo" style="font-size:1em">🌱</span>' : ''), { background: '#a0522d', borderRadius: '0 0 .4em .4em' }, () => {
+        if (F.bloom) { look('신비한 꽃잎 무늬', '<div style="font-size:44px;color:#c0392b">' + [2, 1, 3].map(arrowTri).join(' ') + '</div><p>꽃잎에 화살표 무늬가 있어요.</p>'); return; }
+        if (!F.seed) { if (has('seed')) { take('seed'); solved('seed', '씨앗을 심었어요.'); } else toast('흙만 담긴 빈 화분이에요.'); return; }
+        if (has('can1')) { take('can1'); give('can0'); solved('bloom', '물을 주자 신비한 꽃이 피었어요!'); } else toast('싹이 텄어요. 물이 필요해요.');
+      });
+    },
+    () => {
+      O(10, 22, 32, 50, '<div style="position:absolute;left:30%;right:30%;top:40%;height:12%;background:#ccc;border-radius:.2em"></div>', { background: '#7d5732', borderRadius: '.4em .4em 0 0' }, () => {
+        if (F.shed) { toast('빈 창고예요.'); return; }
+        wDial('창고 자물쇠 (세 자리)', '536', () => { solved('shed'); give('shear'); give('can0'); });
+      });
+      put('note', 12, 12, 28, 8, '빨강 · 노랑 · 파랑', { fontSize: '.55em' });
+      O(54, 30, 18, 26, '<div style="position:absolute;left:15%;right:15%;top:15%;height:30%;background:#cde;border-radius:.2em"></div><div style="position:absolute;left:40%;right:40%;bottom:20%;height:8%;background:#222"></div>', { background: '#c0392b', borderRadius: '.4em' }, () => {
+        if (F.vend) { toast('씨앗 자판기예요.'); return; }
+        if (has('coin')) { take('coin'); solved('vend'); give('seed'); } else toast('씨앗 자판기예요. 동전 넣는 곳이 있어요.');
+      });
+      const cols = ['#e8c33c', '#4a8be0', '#e05252', '#8e44ad', '#4fbf6f', '#f39c12'];
+      O(76, 48, 18, 24, '<div style="display:flex;gap:6%;flex-wrap:wrap;justify-content:center;padding-top:10%">' + cols.map(c => '<i style="width:26%;height:1em;border-radius:50% 50% 0 0;background:' + c + '"></i>').join('') + '</div>', { background: '#6b4a2e', borderRadius: '.3em' }, () => {
+        if (F.tulip) { toast('튤립이 바람에 흔들려요.'); return; }
+        wSeq('튤립을 차례로 눌러요', cols, [2, 5, 0, 4, 1, 3], () => { solved('tulip', '유리 상자가 열렸어요!'); give('key'); });
+      });
+    },
+    () => {
+      O(10, 74, 50, 16, '', { background: 'radial-gradient(ellipse,#5aa9e6,#2c6fa0)', borderRadius: '50%' }, () => {
+        if (has('can0')) { take('can0'); give('can1'); toast('물뿌리개에 물을 가득 채웠어요.'); } else toast('맑은 연못이에요.');
+      });
+      O(28, 46, 14, 26, F.fount ? '<div style="position:absolute;left:-60%;right:-60%;top:-70%;height:60%;border-radius:50% 50% 0 0;background:conic-gradient(from 270deg at 50% 100%,#e05252,#f39c12,#e8c33c,#4fbf6f,#4a8be0,#8e44ad 50%,transparent 50%);opacity:.6"></div>' : '', { background: '#9aa5ab', borderRadius: '.3em .3em 0 0' }, () => toast(F.fount ? '분수에서 물이 뿜어져 나와 무지개가 떴어요.' : '물이 나오지 않는 분수예요.'));
+      O(60, 30, 30, 22, '<div style="display:flex;justify-content:space-around;padding-top:20%;font-size:1.4em">🗿🗿🗿</div>', {}, () => {
+        if (F.fount) { toast('석상들이 분수를 바라봐요.'); return; }
+        wArrows('석상 세 개', 'ar7', [2, 1, 3], () => solved('fount', '석상이 제자리를 찾자 분수에서 물이 솟아요!'));
+      });
+    },
+  ] },
+
+/* ---------- 8. 아이방 ---------- */
+{ name: '아이방', theme: T4('linear-gradient(#f2c6d2,#e6a9bb)', 'linear-gradient(#d9b48a,#c9a074)'),
+  hints: ['칠판 그림의 이름을 블록으로 만들어요.', '인형의 집 창문에 불이 몇 개 켜졌는지 봐요. 위층부터요.', '로봇은 힘이 없으면 움직이지 않아요.', '이불 무늬와 벽 별자리판을 비교해요.', '문 그림판의 색은 칠판에 그려진 모양 순서를 따라요.'],
+  views: [
+    () => {
+      makeDoor(() => {
+        if (!has('key') && !F.dkey) { sfx.bad(); toast('열쇠 구멍과 그림판이 붙어 있어요.'); return; }
+        if (!F.dkey) { take('key'); solved('dkey', '열쇠를 돌렸어요. 이제 그림판만 남았어요.'); return; }
+        if (!has('crayon')) { toast('그림판을 칠할 크레파스가 필요해요.'); return; }
+        wSeq('그림판을 순서대로 칠해요', ['#e05252', '#4a8be0', '#4fbf6f', '#e8c33c'], [3, 0, 2, 1], () => unlockDoor());
+      });
+      O(66, 52, 26, 20, '<div style="position:absolute;left:0;right:0;top:25%;height:8%;background:#e8c33c"></div>', { background: '#4a8be0', borderRadius: '.4em' }, () => {
+        if (F.chest) { toast('장난감 상자가 비었어요.'); return; }
+        wSym('블록 자물쇠', ['고', '양', '이', '개', '새', '토', '끼'], ['고', '양', '이'], () => { solved('chest'); give('wind'); });
+      });
+    },
+    () => {
+      O(F.bed ? 50 : 10, 46, 46, 26, '<div style="position:absolute;inset:10% 4% 30%;background:repeating-linear-gradient(45deg,#fff 0 10%,#ffe6ee 10% 20%)"></div>', { background: '#b56576', borderRadius: '.4em', transition: 'left .6s' }, () => look('이불 무늬', starGrid([0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0], 34)));
+      if (F.bed) O(12, 60, 26, 12, '', { background: '#7d5732', borderRadius: '.3em' }, () => { if (F.bslide) { toast('빈 상자예요.'); return; } wSlide('침대 밑 그림 상자', 'sl8', 'sea', () => { solved('bslide'); give('crayon'); }); });
+      EM(70, 26, 14, 14, '🧸', 2.2, () => { if (F.teddy) { toast('곰 인형 지퍼가 열려 있어요.'); return; } wDial('곰 인형 지퍼 자물쇠 (세 자리)', '205', () => { solved('teddy'); give('bat'); }); });
+      O(14, 8, 36, 22, F.sticker ? '<div style="transform:scale(.55);transform-origin:top left">' + starGrid(F.st8 || Array(12).fill(0), 30) + '</div>' : '', { background: '#0d1626', borderRadius: '.3em' }, () => {
+        if (!F.sticker) { if (has('star')) { take('star'); solved('sticker', '별 스티커를 붙이자 별자리판이 반짝이기 시작했어요.'); } else toast('빈 별자리판이에요. 별 하나 붙일 자리가 있어요.'); return; }
+        if (F.stars) { toast('별자리판이 반짝여요.'); return; }
+        wStars('별자리판', 'st8', [0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0], () => { solved('stars', '별자리판 뒤에서 열쇠가 떨어졌어요!'); give('key'); });
+      });
+    },
+    () => {
+      O(10, 10, 46, 32, '<div style="display:grid;grid-template-columns:1fr 1fr;padding:6%;gap:6%;font-size:1.3em;text-align:center"><span>🐱</span><span style="color:#e8c33c">▲</span><span style="color:#e05252">●</span><span style="color:#4fbf6f">■</span></div><div style="position:absolute;bottom:4%;left:0;right:0;text-align:center;color:#fff;font-size:.5em">▲ → ● → ■ → ◆</div>', { background: '#2f4f3f', border: '.3em solid #8b5e34' }, () => look('칠판 그림', '<div style="background:#2f4f3f;padding:18px;border-radius:8px;color:#fff;font-size:28px;display:grid;gap:8px"><span>🐱</span><span><b style="color:#e8c33c">▲</b> → <b style="color:#e05252">●</b> → <b style="color:#4fbf6f">■</b> → <b style="color:#4a8be0">◆</b></span></div>'));
+      O(64, 50, 18, 22, '<span class="emo" style="font-size:2.6em">🤖</span>', {}, () => {
+        if (F.bed) { toast('로봇이 일을 마치고 쉬고 있어요.'); return; }
+        if (has('bat')) { take('bat'); solved('bed', '로봇이 삐빅 움직이더니 옆방 침대를 밀어 놓았어요!'); } else toast('건전지 칸이 빈 장난감 로봇이에요.');
+      });
+    },
+    () => {
+      O(12, 22, 34, 50, '<div style="position:absolute;left:-8%;right:-8%;top:-14%;height:20%;background:#c0392b;clip-path:polygon(50% 0,100% 100%,0 100%)"></div>' + [[1, 1, 0], [0, 0, 0], [1, 1, 1, 1, 1]].map((r, i) => '<div style="display:flex;gap:6%;justify-content:center;margin:10% 0">' + r.slice(0, 3).map(v => '<i style="width:22%;height:1.4em;background:' + (v ? '#ffe68a' : '#555') + '"></i>').join('') + '</div>').join(''), { background: '#f4e1c1', borderRadius: '.2em' }, () => look('인형의 집 창문', '<div style="display:grid;gap:10px">' + [2, 0, 5].map((n, i) => '<div style="display:flex;gap:6px">' + Array.from({ length: 5 }, (_, k) => '<i style="width:30px;height:30px;background:' + (k < n ? '#ffe68a' : '#555') + '"></i>').join('') + '<span style="color:#aaa">' + ['위층', '가운데층', '아래층'][i] + '</span></div>').join('') + '</div>'));
+      O(60, 8, 26, 22, '<div style="position:absolute;left:49%;top:0;width:2%;height:40%;background:#999"></div><div style="display:flex;justify-content:space-around;padding-top:45%;font-size:1em">🌙⭐☁️</div>', {}, () => {
+        if (F.mobile) { toast('모빌이 빙글빙글 돌아요.'); return; }
+        if (!has('wind') && !F.wound) { toast('태엽을 감는 구멍이 있는 모빌이에요.'); return; }
+        if (!F.wound) { take('wind'); F.wound = 1; saveProg(); }
+        wSimon('모빌 불빛', 4, () => { solved('mobile', '모빌이 돌다가 별 스티커 하나가 떨어졌어요.'); give('star'); });
+      });
+    },
+  ] },
+
+/* ---------- 9. 화가의 작업실 ---------- */
+{ name: '화가의 작업실', theme: T4('linear-gradient(#e9e1d3,#d6cbb8)', WOOD),
+  hints: ['똑같아 보이는 두 그림에는 다른 곳이 있어요.', '물감은 두 가지를 섞어 새 색을 만들어요.', '작은 글씨는 크게 봐야 읽혀요.', '하얀 캔버스 아래에 무언가 덧칠돼 있어요.', '영사기가 비추는 무늬가 문을 열어요.'],
+  views: [
+    () => {
+      makeDoor(() => wSym('문의 무늬 자물쇠', ['◆', '✿', '☾', '✦', '●'], ['☾', '✦', '◆', '✿'], () => unlockDoor()));
+      if (F.proj) O(14, 8, 72, 14, '☾ ✦ ◆ ✿', { color: '#fff', fontSize: '1.3em', textAlign: 'center', textShadow: '0 0 .5em #fff', background: 'radial-gradient(ellipse,rgba(255,255,220,.5),transparent 70%)', display: 'grid', placeItems: 'center' });
+      O(70, 34, 22, 30, F.scrape ? '<div style="position:absolute;inset:6%;background:' + PICS.night + ';background-size:cover;opacity:' + (F.slide9 ? 1 : .6) + '"></div>' : '', { background: '#fff', border: '.3em solid #c9b08a' }, () => {
+        if (!F.scrape) { if (has('knife')) { take('knife'); solved('scrape', '하얀 물감을 긁어내자 그림 조각들이 드러났어요.'); } else toast('새하얀 캔버스예요. 표면이 울퉁불퉁해요.'); return; }
+        if (F.slide9) { toast('밤하늘 그림이 완성됐어요.'); return; }
+        wSlide('캔버스 그림 맞추기', 'sl9', 'night', () => { solved('slide9', '그림을 맞추자 액자 뒤에서 뭔가 떨어졌어요.'); give('bulb'); });
+      });
+    },
+    () => {
+      O(14, 14, 36, 50, '<div style="position:absolute;inset:6%;background:linear-gradient(#f7c59f,#5aa9e6)"></div><b style="position:absolute;right:10%;bottom:8%;font-size:.3em;color:#333">1907</b>', { background: '#8b5e34' }, () => { if (has('lens')) look('돋보기로 본 서명', paper('<span style="font-size:36px;letter-spacing:6px">1907</span>')); else toast('그림 구석에 아주 작은 글씨가 있어요.'); });
+      O(58, 50, 34, 16, '<div style="display:flex;gap:8%;justify-content:center;padding-top:12%">' + ['#e05252', '#e8c33c', '#4a8be0'].map(c => '<i style="width:18%;height:1.2em;border-radius:50%;background:' + c + '"></i>').join('') + '</div>', { background: '#d9b48a', borderRadius: '50% 50% 40% 60%' }, () => {
+        if (F.mix) { toast('팔레트에 물감이 말라 있어요.'); return; }
+        if (!has('brush') && !F.brushed) { toast('물감을 섞을 붓이 없어요.'); return; }
+        if (!F.brushed) { take('brush'); F.brushed = 1; saveProg(); }
+        wMix(() => { solved('mix', '세 색을 다 만들자 팔레트 밑 서랍이 열렸어요.'); give('skey'); });
+      });
+      put('note', 58, 30, 34, 12, '주황 · 초록 · 보라', { fontSize: '.6em', display: 'grid', placeItems: 'center' });
+    },
+    () => {
+      O(12, 14, 34, 34, diffArt(false, 0), { border: '.35em solid #8b5e34' }, () => toast('원본 그림이에요.'));
+      O(54, 14, 34, 34, diffArt(true, 0), { border: '.35em solid #8b5e34' }, () => { if (F.diff) { toast('이미 다른 곳을 다 찾았어요.'); return; } wDiff(() => { solved('diff', '다른 곳을 모두 찾자 액자 뒤에서 붓이 떨어졌어요.'); give('brush'); }); });
+      put('note', 30, 54, 40, 10, '"똑같이 그렸다고? 세 군데가 달라."', { fontSize: '.55em', display: 'grid', placeItems: 'center' });
+    },
+    () => {
+      O(10, 50, 40, 22, '<i style="position:absolute;left:40%;right:40%;top:30%;height:12%;background:#d9b46a"></i>', { background: '#6b4a2e', borderRadius: '.3em' }, () => {
+        if (F.desk) { toast('빈 서랍이에요.'); return; }
+        if (has('skey')) { take('skey'); solved('desk'); give('lens'); } else toast('잠긴 서랍이에요.');
+      });
+      O(64, 22, 22, 50, '<span class="emo" style="font-size:2.4em;position:absolute;left:18%;top:5%">🗿</span><div style="position:absolute;left:0;right:0;bottom:0;height:45%;background:#bbb;display:grid;place-items:center;font-size:.5em">▦▦▦▦</div>', {}, () => {
+        if (F.sculp) { toast('조각상이 돌아가 있어요.'); return; }
+        wKeypad('받침대 숫자판', '1907', () => { solved('sculp', '조각상이 빙글 돌며 받침대가 열렸어요.'); give('knife'); });
+      });
+      O(30, 30, 18, 12, F.lamp ? '<i style="position:absolute;right:-10%;top:30%;width:.6em;height:.6em;border-radius:50%;background:#fff;box-shadow:0 0 1em #fff"></i>' : '', { background: '#333', borderRadius: '.3em' }, () => {
+        if (!F.lamp) { if (has('bulb')) { take('bulb'); solved('lamp', '영사기에 전구를 끼웠어요. 초점 렌즈를 맞춰야 해요.'); } else toast('전구가 빠진 영사기예요.'); return; }
+        if (F.proj) { toast('영사기가 정면 벽을 비춰요.'); return; }
+        wSwitch('초점 렌즈 레버', 'pj9', [[0, 1], [1, 2], [2], [0]], [1, 1, 1], () => solved('proj', '초점이 맞자 정면 벽에 무늬가 비쳤어요!'));
+      });
+    },
+  ] },
+
+/* ---------- 10. 시계탑 ---------- */
+{ name: '시계탑', theme: T4('linear-gradient(#5a5048,#463e37)', STONE),
+  hints: ['종은 소리를 내야 비밀을 보여 줘요. 큰 소리부터요.', '설계도의 화살표처럼 톱니바퀴를 돌려요.', '녹슨 것은 기름이 필요해요.', '사진 속 시계탑의 시각을 봐요.', '시계 뒷면에 새겨진 숫자가 있어요.'],
+  views: [
+    () => {
+      makeDoor(() => { if (!F.levers) { sfx.bad(); toast('문 잠금장치에 전원이 없어요.'); return; } wKeypad('문 숫자판 (네 자리)', '1886', () => unlockDoor()); });
+      O(32, 7, 36, 17, F.cset ? clockFace(10, 50) : clockFace(12, 0), { background: '#fff8ea', borderRadius: '50%', border: '.35em solid #333', fontSize: '1.4em' }, () => {
+        if (!F.bells) { toast('커다란 시곗바늘이 꿈쩍도 하지 않아요.'); return; }
+        if (!F.cset) { wClock('큰 시계를 맞춰요', 10, 50, () => { solved('cset', '시계가 맞춰지자 시계판이 경첩처럼 열렸어요.'); give('lever'); }); return; }
+        look('시계판 뒷면', paper('<span style="font-size:13px">세운 해</span><br><span style="font-size:36px">1886</span>'));
+      });
+    },
+    () => {
+      O(12, 12, 76, 56, '<div style="display:flex;justify-content:space-around;align-items:center;height:100%">' + [0, 1, 2, 3].map(i => '<span style="font-size:' + (i === 1 && !F.gearin ? 1.2 : 2.2) + 'em;opacity:' + (i === 1 && !F.gearin ? .25 : 1) + '">⚙️</span>').join('') + '</div>', { background: '#3a332d', borderRadius: '.4em' }, () => {
+        if (!F.gearin) { if (has('gear')) { take('gear'); solved('gearin', '빈 자리에 톱니바퀴를 끼웠어요.'); } else toast('톱니바퀴 하나가 빠져 있어요.'); return; }
+        if (F.machine) { toast('톱니바퀴들이 맞물려 돌아가요.'); return; }
+        wArrows('톱니바퀴 방향', 'ar10', [1, 3, 1, 3], () => { solved('machine', '덜컹! 기계가 돌아가며 작은 문이 열렸어요.'); give('oil'); });
+      });
+    },
+    () => {
+      [[22, 2.2, '작은 종', 3], [44, 3, '중간 종', 8], [66, 3.8, '큰 종', 4]].forEach(([x, s, nm, n]) => O(x, 8, 16, 18, '<span class="emo" style="font-size:' + s + 'em">🔔</span>', {}, () => toast(F.ropes ? nm + '에 숫자 ' + n + '이(가) 새겨져 있어요.' : '먼지 쌓인 ' + nm + '이에요.')));
+      O(22, 30, 56, 8, '<div style="display:flex;justify-content:space-around">' + '<i style="width:.3em;height:2em;background:#c9a074"></i>'.repeat(3) + '</div>', {}, () => {
+        if (F.ropes) { toast('종이 은은하게 울리고 있어요.'); return; }
+        wSeq('종 줄을 당겨요', ['#c9a074', '#c9a074', '#c9a074'], [2, 1, 0], () => solved('ropes', '데엥- 종이 울리며 먼지가 떨어지자 종에 새긴 숫자가 보여요.'), i => '<span style="font-size:' + (1 + i * .5) + 'em">🔔</span>');
+      });
+      put('note', 70, 46, 22, 9, '큰 소리부터', { fontSize: '.55em', display: 'grid', placeItems: 'center' });
+      O(40, 44, 20, 28, '<div style="position:absolute;left:48%;top:0;width:4%;height:70%;background:#aaa;transform-origin:top;transform:rotate(' + (F.oiled ? 12 : 0) + 'deg)"></div><div style="position:absolute;left:30%;top:62%;width:40%;height:30%;border-radius:50%;background:#c9a074"></div>', {}, () => {
+        if (!F.oiled) { if (has('oil')) { take('oil'); solved('oiled', '기름칠을 하자 진자가 흔들리기 시작했어요. 종이 박자를 맞춰 빛나요.'); } else toast('녹슨 진자가 멈춰 있어요.'); return; }
+        if (F.bells) { toast('진자가 일정하게 흔들려요.'); return; }
+        wSimon('진자 박자 맞추기', 5, () => solved('bells', '진자가 박자를 찾자 정면의 큰 시계가 풀렸어요.'));
+      });
+    },
+    () => {
+      O(10, 52, 44, 20, '<i style="position:absolute;left:40%;right:40%;top:30%;height:14%;background:#d9b46a"></i>', { background: '#6b4a2e', borderRadius: '.3em' }, () => { if (F.wb) { toast('빈 서랍이에요.'); return; } wDial('작업대 서랍 (세 자리)', '384', () => { solved('wb'); give('gear'); }); });
+      put('note', 12, 40, 30, 8, '종 숫자는 작은 종부터', { fontSize: '.5em', display: 'grid', placeItems: 'center' });
+      O(12, 14, 30, 22, '<div style="color:#cde;font-size:1em;text-align:center;padding-top:20%">→ ← → ←</div>', { background: '#1f3a5f', border: '.2em solid #9ab' }, () => look('톱니바퀴 설계도', '<div style="background:#1f3a5f;color:#cde;padding:20px;border-radius:8px;font-size:30px">⚙️→ ⚙️← ⚙️→ ⚙️←</div><p>화살표는 톱니 맨 위가 움직이는 쪽이에요.</p>'));
+      O(52, 12, 20, 16, '<div style="font-size:.4em;color:#555;text-align:center;padding-top:6%">옛 사진</div><div style="position:absolute;left:35%;top:30%;width:30%;height:50%;border-radius:50%;background:#fff;font-size:.6em">' + clockFace(10, 50) + '</div>', { background: '#d8cbb0', border: '.2em solid #fff' }, () => look('시계탑 옛 사진', '<div style="position:relative;width:150px;height:150px;border-radius:50%;background:#fff8ea;border:6px solid #333;font-size:26px">' + clockFace(10, 50) + '</div>'));
+      O(68, 40, 22, 30, '<div style="display:flex;gap:10%;justify-content:center;padding-top:20%">' + '<i style="width:15%;height:2.2em;background:#888;border-radius:.2em"></i>'.repeat(F.leverin ? 3 : 2) + '</div>', { background: '#555', borderRadius: '.3em' }, () => {
+        if (!F.leverin) { if (has('lever')) { take('lever'); solved('leverin', '빠진 레버를 끼웠어요.'); } else toast('레버 하나가 빠져 있어요.'); return; }
+        if (F.levers) { toast('레버가 맞춰져 있어요.'); return; }
+        wSwitch('레버 세 개', 'lv10', [[0, 1], [1, 2], [0]], [1, 1, 1], () => solved('levers', '문 쪽에서 윙- 전원이 들어오는 소리가 나요.'));
+      });
+    },
+  ] },
+
+/* ---------- 11. 천문대 ---------- */
+{ name: '천문대', theme: T4('linear-gradient(#1c2340,#141a30)', 'linear-gradient(#2b2b38,#22222c)'),
+  hints: ['관측 일지에 시각이 적혀 있어요.', '망원경으로 본 것을 기억해요.', '저울 옆 글귀를 지켜야 해요. 추가 하나 모자랄지도 몰라요.', '창문의 스테인드글라스 색 순서를 봐요. 위에서부터요.'],
+  views: [
+    () => {
+      makeDoor(() => {
+        if (!F.gk) { if (has('gkey')) { take('gkey'); solved('gk', '금빛 열쇠를 돌렸어요. 이제 색 버튼만 남았어요.'); } else { sfx.bad(); toast('금빛 열쇠 구멍과 색 버튼이 있어요.'); } return; }
+        wSeq('문의 색 버튼', ['#e05252', '#4a8be0', '#4fbf6f', '#e8c33c'], [1, 3, 0, 2], () => unlockDoor());
+      });
+      NOTE(70, 46, 18, 12, '📓', () => look('관측 일지', paper('관측 시작: 9시 45분<br>오늘 본 별자리를<br>잊지 말 것.', 'font-size:17px')));
+    },
+    () => {
+      O(34, 14, 32, 26, clockFace(12, 0), { background: '#fff8ea', borderRadius: '50%', border: '.35em solid #888', fontSize: '1.3em' }, () => {
+        if (F.oclock) { toast('시계 아래 칸은 비었어요.'); return; }
+        wClock('관측 시계를 맞춰요', 9, 45, () => { solved('oclock', '시계 아래 작은 칸이 열렸어요.'); give('lens'); });
+      });
+      O(16, 50, 68, 20, '<div style="display:flex;justify-content:space-around;align-items:center;height:100%;font-size:1.3em">🪐🌍🔴🌕</div>', { background: '#2a3050', borderRadius: '.4em' }, () => {
+        if (F.planet) { toast('행성 모형이 해를 바라봐요.'); return; }
+        wArrows('행성 모형 방향', 'ar11', [0, 1, 0, 3], () => { solved('planet', '행성이 제자리를 찾자 받침에서 동전 같은 원판이 나왔어요. 추였어요!'); give('w7'); });
+      });
+      put('note', 70, 6, 22, 10, '↑ → ↑ ←', { fontSize: '.7em', display: 'grid', placeItems: 'center' });
+    },
+    () => {
+      O(20, 30, 40, 12, '', { background: 'linear-gradient(#777,#bbb,#777)', borderRadius: '.6em', transform: 'rotate(-20deg)' }, () => {
+        if (!F.lensin) { if (has('lens')) { take('lens'); solved('lensin', '망원경에 렌즈를 끼웠어요.'); } else toast('렌즈가 빠진 망원경이에요.'); return; }
+        look('망원경으로 본 밤하늘', starGrid([1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1], 36));
+      });
+      O(70, 8, 18, 50, '<div style="display:grid;height:100%">' + ['#4a8be0', '#e8c33c', '#e05252', '#4fbf6f'].map(c => '<i style="background:' + c + ';opacity:.8"></i>').join('') + '</div>', { border: '.3em solid #333', borderRadius: '2em 2em 0 0', overflow: 'hidden' }, () => toast('스테인드글라스 창문이에요.'));
+    },
+    () => {
+      O(14, 10, 40, 26, F.smap ? starGrid([1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1], 12) : '', { background: '#0d1626', borderRadius: '.3em', display: 'grid', placeItems: 'center' }, () => {
+        if (F.smap) { toast('별자리가 완성됐어요.'); return; }
+        wStars('별자리 지도', 'st11', [1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1], () => solved('smap', '별자리를 맞추자 지도 아래 서랍이 열렸어요. 저울이 하나 있어요.'));
+      });
+      if (F.smap) O(14, 50, 34, 22, '<div style="position:absolute;left:47%;top:0;width:6%;height:100%;background:#8a7a5a"></div><div style="position:absolute;left:5%;right:5%;top:10%;height:8%;background:#b9a46e"></div>', {}, () => {
+        if (F.bal) { toast('저울 받침 속은 비었어요.'); return; }
+        const ws = has('w7') || F.w7in ? [1, 3, 4, 2] : [1, 3, 4];
+        if (has('w7')) { take('w7'); F.w7in = 1; saveProg(); }
+        wBalance('별의 무게', ws, 6, 2, () => { solved('bal', '수평! 저울 받침에서 그림 상자가 나왔어요.'); });
+      });
+      if (F.smap) put('note', 52, 48, 22, 12, '추는 두 개<br>별의 수만큼', { fontSize: '.55em', textAlign: 'center', lineHeight: 1.4 });
+      if (F.bal) O(60, 62, 24, 10, '', { background: '#7d5732', borderRadius: '.3em' }, () => { if (F.sl11d) { toast('빈 상자예요.'); return; } wSlide('그림 상자', 'sl11', 'night', () => { solved('sl11d'); give('gkey'); }); });
+    },
+  ] },
+
+/* ---------- 12. 마지막 방 ---------- */
+{ name: '기억의 방', theme: T4('linear-gradient(#4a3a52,#3c2f44)', WOOD),
+  hints: ['이 방의 모든 자물쇠는 지나온 방에서 본 것이에요.', '기억이 안 나면 방 고르기에서 그 방에 다시 다녀와도 돼요. 이 방의 진행은 그대로 남아요.', '판에 적힌 방 이름을 잘 읽어요.', '봉인 여섯 개를 다 풀어야 문이 반응해요.'],
+  views: [
+    () => {
+      makeDoor(() => {
+        const n = ['s1', 's2', 's3', 's4', 's5', 's6'].filter(k => F[k]).length;
+        if (n < 6) { sfx.bad(); toast('문에 봉인 여섯 개가 있어요. ' + n + '개가 풀렸어요.'); return; }
+        wSeq('마지막 문: 서재 책장의 그 순서', BOOKS.map(b => b[0]), BOOK_GOAL, () => unlockDoor('모든 기억이 맞아떨어졌어요. 마지막 문이 열렸어요!'), i => '<i style="display:block;width:30px;height:' + BOOKS[i][1] * .6 + 'px;background:' + BOOKS[i][0] + ';margin:auto auto 6px;border-radius:2px"></i>');
+      });
+      const seals = ['s1', 's2', 's3', 's4', 's5', 's6'].map(k => F[k] ? '🔓' : '🔒').join('');
+      O(28, 16, 44, 6, seals, { fontSize: '.8em', textAlign: 'center' });
+      NOTE(70, 30, 20, 16, '📜', () => look('기억의 편지', paper('① 금고: 서재 시계의 짧은 바늘 · 거실 상자 자물쇠 첫 숫자 · 지하실 첫 붉은 숫자 · 레코드의 첫 숫자<br>② 오르골: 거실 괘종시계 속 노래<br>③ 무늬: 거실 창문 성에 속 그림<br>④ 시계: 시계탑 옛 사진의 시각<br>⑤ 저울: 창고 송장의 무게, 추 세 개로<br>⑥ 별: 천문대에서 본 별자리', 'font-size:13px;text-align:left;line-height:1.8')));
+    },
+    () => {
+      O(14, 30, 30, 26, '<i style="position:absolute;left:60%;top:30%;width:1em;height:1em;border-radius:50%;border:.18em solid #aaa"></i><b style="position:absolute;left:8%;top:6%;font-size:.5em;color:#ccc">①</b>', { background: 'linear-gradient(#555,#3a3a3a)', borderRadius: '.3em' }, () => { if (F.s1) { toast('봉인이 풀린 금고예요.'); return; } wKeypad('① 기억의 금고', '3764', () => { solved('s1', '첫 번째 봉인이 풀렸어요.'); give('gear'); }); });
+      O(56, 40, 30, 18, '<b style="position:absolute;left:8%;top:6%;font-size:.5em;color:#ccc">②</b>' + (F.mbin ? '<span class="emo" style="font-size:1.2em">⚙️</span>' : ''), { background: '#4a2e5a', borderRadius: '.4em', display: 'grid', placeItems: 'center' }, () => {
+        if (F.s2) { toast('오르골이 그 노래를 연주해요.'); return; }
+        if (!F.mbin) { if (has('gear')) { take('gear'); F.mbin = 1; saveProg(); render(); toast('오르골에 톱니바퀴를 끼웠어요. 건반이 나타났어요.'); } else toast('태엽 톱니가 빠진 오르골이에요.'); return; }
+        wPiano('② 그 노래를 연주해요', 7, [0, 2, 4, 2, 0, 5, 4], () => solved('s2', '두 번째 봉인이 풀렸어요.'));
+      });
+    },
+    () => {
+      O(14, 14, 30, 20, '<b style="position:absolute;left:8%;top:6%;font-size:.5em;color:#ccc">③</b><div style="font-size:.8em;color:#f0c264;text-align:center;padding-top:30%">? ? ? ?</div>', { background: '#2a2433', borderRadius: '.3em' }, () => { if (F.s3) { toast('봉인이 풀렸어요.'); return; } wSym('③ 무늬', ['♥', '★', '●', '▲', '■'], ['♥', '★', '●', '▲'], () => solved('s3', '세 번째 봉인이 풀렸어요.')); });
+      O(56, 10, 26, 22, '<b style="position:absolute;left:-10%;top:0;font-size:.5em;color:#ccc">④</b>' + clockFace(12, 0), { background: '#fff8ea', borderRadius: '50%', border: '.3em solid #6b4a2e', fontSize: '1.2em' }, () => { if (F.s4) { toast('봉인이 풀렸어요.'); return; } wClock('④ 그 시각', 10, 50, () => solved('s4', '네 번째 봉인이 풀렸어요.')); });
+    },
+    () => {
+      O(14, 46, 34, 26, '<b style="position:absolute;left:8%;top:6%;font-size:.5em;color:#ccc">⑤</b><div style="position:absolute;left:47%;top:20%;width:6%;height:80%;background:#8a7a5a"></div><div style="position:absolute;left:5%;right:5%;top:25%;height:8%;background:#b9a46e"></div>', {}, () => { if (F.s5) { toast('봉인이 풀렸어요.'); return; } wBalance('⑤ 그 무게', [2, 3, 4, 5, 6], 13, 3, () => solved('s5', '다섯 번째 봉인이 풀렸어요.')); });
+      O(56, 12, 32, 24, '<b style="position:absolute;left:8%;top:6%;font-size:.5em;color:#ccc">⑥</b>', { background: '#0d1626', borderRadius: '.3em' }, () => { if (F.s6) { toast('봉인이 풀렸어요.'); return; } wStars('⑥ 그 별자리', 'st12', [1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1], () => solved('s6', '여섯 번째 봉인이 풀렸어요.')); });
+    },
+  ] },
 ];
 
-/* ---------- screens ---------- */
+/* ---------- extra widgets used above ---------- */
+function diffArt(changed, sz) {
+  const base = ['🌳', '🏠', '☀️', '🐦', '🌷', '🐈', '☁️', '🚲', '🍎'];
+  const alt = ['🌳', '🏠', '🌙', '🐦', '🌷', '🐕', '☁️', '🚲', '🍐'];
+  const a = changed ? alt : base;
+  return '<div style="display:grid;grid-template-columns:repeat(3,1fr);height:100%;background:#f7f1e3;font-size:' + (sz || .9) + 'em;place-items:center">' + a.map(x => '<span>' + x + '</span>').join('') + '</div>';
+}
+function wDiff(done) {
+  zoom('오른쪽 그림에서 다른 곳 세 군데를 눌러요', body => {
+    const base = ['🌳', '🏠', '☀️', '🐦', '🌷', '🐈', '☁️', '🚲', '🍎'], alt = ['🌳', '🏠', '🌙', '🐦', '🌷', '🐕', '☁️', '🚲', '🍐'];
+    const wrap = h('div', ''); wrap.style.cssText = 'display:flex;gap:10px'; body.appendChild(wrap);
+    const mk = (arr, click) => { const g = h('div', ''); g.style.cssText = 'display:grid;grid-template-columns:repeat(3,44px);gap:2px;background:#f7f1e3;padding:6px;border-radius:8px;border:4px solid #8b5e34'; arr.forEach((x, i) => { const c = h('button', '', x); c.style.cssText = 'height:44px;font-size:26px;border-radius:6px'; if (click) c.onclick = () => click(i, c); g.appendChild(c); }); wrap.appendChild(g); };
+    let found = new Set(); const st = h('p', '', '0 / 3');
+    mk(base, null);
+    mk(alt, (i, c) => { if (base[i] !== alt[i]) { if (!found.has(i)) { found.add(i); sfx.get(); c.style.boxShadow = '0 0 0 3px #e05252'; st.textContent = found.size + ' / 3'; if (found.size === 3) setTimeout(() => { closeZoom(); done(); }, 400); } } else { sfx.bad(); shake(c); } });
+    body.appendChild(st);
+  });
+}
+function wMix(done) {
+  zoom('물감 두 가지를 골라 섞어요', body => {
+    const prim = [['빨강', '#e05252'], ['노랑', '#e8c33c'], ['파랑', '#4a8be0']];
+    const targets = [['주황', '#f39c12', [0, 1]], ['초록', '#4fbf6f', [1, 2]], ['보라', '#8e44ad', [0, 2]]];
+    let ti = 0, pick = [];
+    const tgt = h('div', ''); body.appendChild(tgt);
+    const row = h('div', ''); row.style.cssText = 'display:flex;gap:12px'; body.appendChild(row);
+    const st = h('p', ''); body.appendChild(st);
+    const draw = () => { tgt.innerHTML = '<div style="display:flex;gap:10px;align-items:center"><span style="color:var(--dim)">' + (ti + 1) + '/3 만들 색</span><span style="width:56px;height:56px;border-radius:50%;background:#555;border:3px dashed #888;display:grid;place-items:center;font-size:12px">?</span><b>' + targets[ti][0] + '</b></div>'; st.textContent = '고른 물감: ' + (pick.map(p => prim[p][0]).join(' + ') || '없음'); };
+    prim.forEach(([nm, c], i) => { const b = h('button', '', ''); b.style.cssText = 'width:62px;height:62px;border-radius:50%;background:' + c + ';box-shadow:inset 0 -4px rgba(0,0,0,.3)'; b.setAttribute('aria-label', nm);
+      b.onclick = () => { sfx.tap(); if (pick.includes(i)) return; pick.push(i); draw(); if (pick.length === 2) { const ok = pick.slice().sort().join() === targets[ti][2].join(); setTimeout(() => { if (ok) { sfx.get(); ti++; pick = []; if (ti === 3) { closeZoom(); done(); return; } } else { sfx.bad(); pick = []; st.textContent = '색이 탁해졌어요. 다시 골라요.'; return; } draw(); }, 300); } };
+      row.appendChild(b); });
+    draw();
+  });
+}
+
+Object.assign(ITEMS, {
+  ice: ['🧊', '얼음 덩어리'], knob: ['🎛️', '가스레인지 손잡이'], ring: ['💍', '반지'], oglove: ['🧤', '오븐 장갑'],
+  shear: ['✂️', '전지가위'], can0: ['🚿', '빈 물뿌리개'], can1: ['💧', '물이 든 물뿌리개'], coin: ['🪙', '동전'], seed: ['🌱', '씨앗'],
+  wind: ['🌀', '태엽 손잡이'], star: ['⭐', '별 스티커'], crayon: ['🖍️', '크레파스'],
+  brush: ['🖌️', '붓'], knife: ['🔪', '조각칼'], bulb: ['💡', '영사기 전구'], lever: ['🎚️', '레버'], oil: ['🛢️', '기름통'],
+});
+
+/* ---------- flow ---------- */
+function startRoom(i, resume) {
+  cur = i; sel = null; hintsShown = 1;
+  if (resume && save.prog && save.prog.room === i) { F = save.prog.F || {}; inv = save.prog.inv || []; view = save.prog.view || 0; startTime = Date.now() - (save.prog.t || 0); }
+  else { F = {}; inv = []; view = 0; startTime = Date.now(); }
+  $('roomName').innerHTML = '방 ' + (i + 1) + ' <small>' + ROOMS[i].name + '</small>';
+  ['titleScreen', 'selectScreen', 'clearScreen', 'menuScreen', 'hintScreen'].forEach(s => $(s).hidden = true);
+  closeZoom(); fit(); render(); drawInv(); $('toast').classList.remove('on'); saveProg();
+}
+function cleared() {
+  if (!save.cleared.includes(cur)) save.cleared.push(cur);
+  const sec = Math.round((Date.now() - startTime) / 1000), t = sec >= 60 ? Math.floor(sec / 60) + '분 ' + (sec % 60) + '초' : sec + '초';
+  const last = cur === ROOMS.length - 1;
+  save.prog = null; persist(); sfx.win();
+  $('clearEmo').textContent = last ? '🏆' : '🎉';
+  $('clearTitle').textContent = last ? '저택을 탈출했어요!' : '방 ' + (cur + 1) + ' 탈출!';
+  $('clearText').textContent = (last ? '열두 개의 방을 모두 빠져나왔어요. 정말 대단해요! ' : '') + '걸린 시간 ' + t;
+  $('nextBtn').textContent = last ? '처음 방부터 다시' : '다음 방으로';
+  $('clearScreen').hidden = false;
+}
+$('nextBtn').onclick = () => startRoom(cur === ROOMS.length - 1 ? 0 : cur + 1);
 function showSelect() {
   const g = $('lvGrid'); g.innerHTML = '';
   const maxOpen = Math.max(0, ...save.cleared.map(c => c + 1));
   ROOMS.forEach((r, i) => {
-    const done = save.cleared.includes(i), open = i <= maxOpen;
-    const b = h('button', 'lv' + (done ? ' done' : '') + (open ? '' : ' locked'), open ? (i + 1) : '🔒');
-    if (open) b.onclick = () => startRoom(i);
+    const done = save.cleared.includes(i), open = i <= maxOpen, prog = save.prog && save.prog.room === i;
+    const b = h('button', 'lv' + (done ? ' done' : '') + (open ? '' : ' locked'), open ? (i + 1) + (prog ? '<small style="position:absolute;bottom:4px;font-size:10px;color:var(--gold)">진행 중</small>' : '') : '🔒');
+    if (open) b.onclick = () => startRoom(i, true);
     g.appendChild(b);
   });
-  ['titleScreen','clearScreen','menuScreen'].forEach(s => $(s).hidden = true);
+  ['titleScreen', 'clearScreen', 'menuScreen'].forEach(s => $(s).hidden = true);
   $('selectScreen').hidden = false;
 }
-function nextUnplayed() { for (let i = 0; i < ROOMS.length; i++) if (!save.cleared.includes(i)) return i; return 0; }
-$('playBtn').textContent = save.cleared.length ? '이어하기 (방 ' + (nextUnplayed() + 1) + ')' : '시작하기';
-$('playBtn').onclick = () => { audio(); startRoom(nextUnplayed()); };
+function nextRoom() { if (save.prog && save.prog.room < ROOMS.length) return save.prog.room; for (let i = 0; i < ROOMS.length; i++) if (!save.cleared.includes(i)) return i; return 0; }
+const n0 = nextRoom();
+$('playBtn').textContent = (save.cleared.length || save.prog) ? '이어하기 (방 ' + (n0 + 1) + ')' : '시작하기';
+$('playBtn').onclick = () => { audio(); startRoom(nextRoom(), true); };
 $('selectBtn').onclick = () => { audio(); showSelect(); };
-$('selBack').onclick = () => { $('selectScreen').hidden = true; if (!scene.children.length) $('titleScreen').hidden = false; };
+$('selBack').onclick = () => { $('selectScreen').hidden = true; if (!started) $('titleScreen').hidden = false; };
 $('clearMenu').onclick = showSelect;
 $('menuBtn').onclick = () => { $('soundBtn').textContent = save.sound ? '소리 끄기' : '소리 켜기'; $('menuScreen').hidden = false; };
 $('resumeBtn').onclick = () => $('menuScreen').hidden = true;
-$('restartBtn').onclick = () => startRoom(cur);
+$('restartBtn').onclick = () => startRoom(cur, false);
 $('menuSelect').onclick = showSelect;
 $('soundBtn').onclick = () => { save.sound = !save.sound; persist(); $('soundBtn').textContent = save.sound ? '소리 끄기' : '소리 켜기'; };
-const HINT_WAIT = 180;
-let hintTimer = 0;
+
+/* hints: one more every 2 minutes in the room */
+const HINT_STEP = 120;
+let hintsShown = 1, hintTimer = 0;
 function drawHints() {
   const hs = ROOMS[cur].hints; $('hintList').innerHTML = hs.slice(0, hintsShown).map((t, i) => '<p><b>' + (i + 1) + '</b>' + t + '</p>').join('');
   const more = $('moreHint'); more.hidden = hintsShown >= hs.length;
-  const left = HINT_WAIT - Math.floor((Date.now() - startTime) / 1000);
+  const left = hintsShown * HINT_STEP - Math.floor((Date.now() - startTime) / 1000);
   more.disabled = left > 0; more.style.opacity = left > 0 ? .45 : 1;
-  more.textContent = left > 0 ? '두 번째 힌트까지 ' + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0') : '두 번째 힌트 보기';
+  more.textContent = left > 0 ? '다음 힌트까지 ' + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0') : '다음 힌트 보기';
   clearTimeout(hintTimer); if (!more.hidden && left > 0 && !$('hintScreen').hidden) hintTimer = setTimeout(drawHints, 1000);
 }
 $('hintBtn').onclick = () => { $('hintScreen').hidden = false; drawHints(); };
-$('moreHint').onclick = () => { if ((Date.now() - startTime) / 1000 < HINT_WAIT) return; hintsShown++; drawHints(); };
+$('moreHint').onclick = () => { if ((Date.now() - startTime) / 1000 < hintsShown * HINT_STEP) return; hintsShown++; drawHints(); };
 $('hintClose').onclick = () => $('hintScreen').hidden = true;
 
-fit(); startRoom(save.last != null && save.last < ROOMS.length ? save.last : 0);
-$('titleScreen').hidden = false;
-
+let started = false;
+fit();
+{ const r = nextRoom(); cur = r; F = {}; inv = []; view = 0; render(); drawInv(); }
+const _sr = startRoom; startRoom = function (i, r) { started = true; _sr(i, r); };
 if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 </script>
 </body>

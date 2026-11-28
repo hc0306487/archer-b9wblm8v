@@ -1,6 +1,6 @@
 {
-  "name": "열두 방 탈출",
-  "short_name": "방 탈출",
+  "name": "잠긴 저택",
+  "short_name": "잠긴 저택",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

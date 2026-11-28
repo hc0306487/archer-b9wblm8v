@@ -1,5 +1,5 @@
 // 처음 한 번 열 때 게임 파일을 아이폰에 저장해 두고, 그 뒤로는 인터넷 없이 실행해요.
-const CACHE = 'escape-v3';
+const CACHE = 'escape-v4';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES.map(f => new Request(f, { cache: 'reload' })))).then(() => self.skipWaiting()));
